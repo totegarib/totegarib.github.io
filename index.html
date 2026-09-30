@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mis Lukas</title>
+<meta name="apple-mobile-web-app-title" content="Mis Lukas">
+<meta name="application-name" content="Mis Lukas">
+<meta name="theme-color" content="#6B5882">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+  :root { --fondo:#FCF6E0; --tinta:#2A2230; --suave:#6F6776; --morado:#6B5882; --dorado:#D4860B; }
+  @media (prefers-color-scheme: dark) { :root { --fondo:#1C1722; --tinta:#F3EEE4; --suave:#ABA2B3; --morado:#BCA8D6; --dorado:#E8B35A; } }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body { background: var(--fondo); color: var(--tinta); font: 16px/1.5 "Helvetica Neue", Helvetica, Arial, sans-serif; }
+  main { max-width: 420px; margin: 0 auto; padding: calc(env(safe-area-inset-top, 0px) + 48px) 24px 40px; display: grid; gap: 18px; justify-items: center; text-align: center; }
+  img { width: 112px; height: 112px; border-radius: 26px; box-shadow: 0 6px 20px rgba(0,0,0,.12); }
+  h1 { margin: 0; font-size: 30px; letter-spacing: -.02em; }
+  h1 .a { color: var(--morado); } h1 .b { color: var(--dorado); }
+  p { margin: 0; color: var(--suave); }
+  a.btn { display: block; width: 100%; padding: 14px; border-radius: 99px; background: var(--morado); color: #fff; font-weight: 600; text-decoration: none; }
+  ol { text-align: left; margin: 0; padding-left: 20px; color: var(--suave); }
+  .caja { width: 100%; border: 1px solid rgba(127,127,127,.3); border-radius: 16px; padding: 14px 16px; display: grid; gap: 8px; text-align: left; }
+  .caja b { color: var(--tinta); }
+</style>
+</head>
+<body>
+<main>
+  <img src="icon-512.png" alt="">
+  <h1><span class="a">Mis</span> <span class="b">Lukas</span></h1>
+  <a class="btn" id="abrir" href="#">Abrir Mis Lukas</a>
+  <div class="caja">
+    <b>Tenla en tu pantalla de inicio</b>
+    <ol>
+      <li>Abre esta página en <b>Safari</b>.</li>
+      <li>Toca <b>Compartir</b> (el cuadrado con la flecha).</li>
+      <li>Elige <b>Añadir a pantalla de inicio</b>. Si aparece la opción «Abrir como app web», déjala <b>desactivada</b>.</li>
+      <li>Toca <b>Añadir</b>. Queda con el logo de Mis Lukas.</li>
+    </ol>
+  </div>
+  <p id="aviso"></p>
+</main>
+<script>
+  // Dirección de la app Mis Lukas (la que termina en /exec). Es lo único que hay que cambiar.
+  const APP_URL = 'https://script.google.com/macros/s/AKfycbxolvjrM7NuJWuPAOBSRdYo7q84KlDcCShosx3bnumcBwzsHkSl2NswqNWxjv3695yw/exec';
+
+  const lista = /^https:\/\/script\.google\.com\/macros\/(u\/\d+\/)?s\/[\w-]+\/exec/.test(APP_URL);
+  document.getElementById('abrir').href = lista ? APP_URL : '#';
+  if (!lista) document.getElementById('aviso').textContent = 'Falta poner la dirección de la app en esta página.';
+  // Si se abrió desde el ícono de la pantalla de inicio, va directo a la app.
+  const desdeIcono = new URLSearchParams(location.search).has('abrir') || window.navigator.standalone === true;
+  if (desdeIcono && lista) location.replace(APP_URL);
+  // Si no, se queda mostrando las instrucciones; y la dirección guardada en el ícono ya lleva "?abrir=1".
+  else history.replaceState(null, '', location.pathname + '?abrir=1');
+</script>
+</body>
+</html>
