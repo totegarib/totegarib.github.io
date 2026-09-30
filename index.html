@@ -15,8 +15,12 @@
   var APP_URL = 'https://script.google.com/macros/s/AKfycbzsGdQSKOB_usVlqMsthuIK_LxCObkEEVZAzckntlmIzBenSmLlqxZ09pXNI7MvTfw8/exec';
   var LISTA = /^https:\/\/script\.google\.com\/macros\/(u\/\d+\/)?s\/[\w-]+\/exec/.test(APP_URL);
   var COMO_APP_WEB = window.navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
-  // Desde el ícono (en Safari): directo a la app, sin mostrar esta página.
-  if (!COMO_APP_WEB && LISTA) {
+  var VER_INSTRUCCIONES = /[?&]instalar/.test(location.search);
+  var MARCA = 'misLukas.yaInstalada';
+  function yaInstalada() { try { return localStorage.getItem(MARCA) === '1'; } catch (e) { return false; } }
+  // La primera vez se muestra esta página (con el logo, para agregarla a la pantalla de inicio).
+  // Desde la segunda vez, salta directo a la app sin mostrar nada.
+  if (!COMO_APP_WEB && LISTA && !VER_INSTRUCCIONES && yaInstalada()) {
     document.documentElement.className = 'saltando';
     location.replace(APP_URL);
   }
@@ -61,14 +65,21 @@
 <script>
   document.getElementById('abrir').href = LISTA ? APP_URL : '#';
   if (!LISTA) document.getElementById('aviso').textContent = 'Falta poner la dirección de la app en esta página.';
-  // Agregada como "app web": ahí el iPhone no recuerda la sesión de Google y la pediría cada vez.
   if (COMO_APP_WEB) {
+    // Agregada como "app web": ahí el iPhone no recuerda la sesión de Google y la pediría cada vez.
     document.querySelector('.caja').innerHTML = '<b>Este ícono quedó como «app web»</b>' +
       '<p style="margin:0">Así el iPhone no recuerda tu cuenta de Google y te la pide cada vez. Para arreglarlo:</p>' +
       '<ol><li>Mantén presionado este ícono en tu pantalla de inicio → <b>Eliminar</b>.</li>' +
       '<li>Abre <b>totegarib.github.io</b> en Safari.</li>' +
       '<li>Compartir → <b>Añadir a pantalla de inicio</b> → apaga <b>«Abrir como app web»</b> → <b>Añadir</b>.</li></ol>';
     document.getElementById('abrir').textContent = 'Abrir Mis Lukas igual';
+  } else if (!VER_INSTRUCCIONES) {
+    // Al salir de esta página (volver a la pantalla de inicio tras agregar el ícono, o abrir la app),
+    // queda anotado: desde entonces esta dirección abre la app directo.
+    var marcar = function () { try { localStorage.setItem(MARCA, '1'); } catch (e) {} };
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') marcar(); });
+    window.addEventListener('pagehide', marcar);
+    document.getElementById('abrir').addEventListener('click', marcar);
   }
 </script>
 </body>
