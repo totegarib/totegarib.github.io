@@ -16,10 +16,7 @@
   var LISTA = /^https:\/\/script\.google\.com\/macros\/(u\/\d+\/)?s\/[\w-]+\/exec/.test(APP_URL);
   var COMO_APP_WEB = window.navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
   // Desde el ícono (en Safari): directo a la app, sin mostrar esta página.
-  if (!COMO_APP_WEB && LISTA) {
-    document.documentElement.className = 'saltando';
-    location.replace(APP_URL);
-  }
+  // Esta es la página para instalar: no salta a la app.
 </script>
 
 <style>
@@ -69,6 +66,9 @@
       '<li>Abre <b>totegarib.github.io</b> en Safari.</li>' +
       '<li>Compartir → <b>Añadir a pantalla de inicio</b> → apaga <b>«Abrir como app web»</b> → <b>Añadir</b>.</li></ol>';
     document.getElementById('abrir').textContent = 'Abrir Mis Lukas igual';
+  } else {
+    // el ícono que se agregue desde aquí guarda la dirección principal ("/"), que abre la app directo
+    history.replaceState(null, '', location.pathname.replace(/instalar\.html$/, ''));
   }
 </script>
 </body>
