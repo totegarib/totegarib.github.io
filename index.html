@@ -10,10 +10,25 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" type="image/png" href="icon-192.png">
 <link rel="manifest" href="manifest.webmanifest">
+<script>
+  // Dirección de la app Mis Lukas (la que termina en /exec). Es lo único que hay que cambiar.
+  var APP_URL = 'https://script.google.com/macros/s/AKfycbzsGdQSKOB_usVlqMsthuIK_LxCObkEEVZAzckntlmIzBenSmLlqxZ09pXNI7MvTfw8/exec';
+  var LISTA = /^https:\/\/script\.google\.com\/macros\/(u\/\d+\/)?s\/[\w-]+\/exec/.test(APP_URL);
+  var COMO_APP_WEB = window.navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+  // Desde el ícono (en Safari): directo a la app, sin mostrar esta página.
+  if (/[?&]abrir=1/.test(location.search) && !COMO_APP_WEB && LISTA) {
+    document.documentElement.className = 'saltando';
+    location.replace(APP_URL);
+  }
+</script>
+
 <style>
   :root { --fondo:#FCF6E0; --tinta:#2A2230; --suave:#6F6776; --morado:#6B5882; --dorado:#D4860B; }
   @media (prefers-color-scheme: dark) { :root { --fondo:#1C1722; --tinta:#F3EEE4; --suave:#ABA2B3; --morado:#BCA8D6; --dorado:#E8B35A; } }
   * { box-sizing: border-box; }
+  html.saltando main { display: none; }
+  html.saltando, html.saltando body { background: #FFFFFF; }
+  @media (prefers-color-scheme: dark) { html.saltando, html.saltando body { background: #26202D; } }
   html, body { margin: 0; min-height: 100%; }
   body { background: var(--fondo); color: var(--tinta); font: 16px/1.5 "Helvetica Neue", Helvetica, Arial, sans-serif; }
   main { max-width: 420px; margin: 0 auto; padding: calc(env(safe-area-inset-top, 0px) + 48px) 24px 40px; display: grid; gap: 18px; justify-items: center; text-align: center; }
@@ -44,17 +59,20 @@
   <p id="aviso"></p>
 </main>
 <script>
-  // Dirección de la app Mis Lukas (la que termina en /exec). Es lo único que hay que cambiar.
-  const APP_URL = 'https://script.google.com/macros/s/AKfycbzsGdQSKOB_usVlqMsthuIK_LxCObkEEVZAzckntlmIzBenSmLlqxZ09pXNI7MvTfw8/exec';
-
-  const lista = /^https:\/\/script\.google\.com\/macros\/(u\/\d+\/)?s\/[\w-]+\/exec/.test(APP_URL);
-  document.getElementById('abrir').href = lista ? APP_URL : '#';
-  if (!lista) document.getElementById('aviso').textContent = 'Falta poner la dirección de la app en esta página.';
-  // Si se abrió desde el ícono de la pantalla de inicio, va directo a la app.
-  const desdeIcono = new URLSearchParams(location.search).has('abrir') || window.navigator.standalone === true;
-  if (desdeIcono && lista) location.replace(APP_URL);
-  // Si no, se queda mostrando las instrucciones; y la dirección guardada en el ícono ya lleva "?abrir=1".
-  else history.replaceState(null, '', location.pathname + '?abrir=1');
+  document.getElementById('abrir').href = LISTA ? APP_URL : '#';
+  if (!LISTA) document.getElementById('aviso').textContent = 'Falta poner la dirección de la app en esta página.';
+  // Agregada como "app web": ahí el iPhone no recuerda la sesión de Google y la pediría cada vez.
+  if (COMO_APP_WEB) {
+    document.querySelector('.caja').innerHTML = '<b>Este ícono quedó como «app web»</b>' +
+      '<p style="margin:0">Así el iPhone no recuerda tu cuenta de Google y te la pide cada vez. Para arreglarlo:</p>' +
+      '<ol><li>Mantén presionado este ícono en tu pantalla de inicio → <b>Eliminar</b>.</li>' +
+      '<li>Abre <b>totegarib.github.io</b> en Safari.</li>' +
+      '<li>Compartir → <b>Añadir a pantalla de inicio</b> → apaga <b>«Abrir como app web»</b> → <b>Añadir</b>.</li></ol>';
+    document.getElementById('abrir').textContent = 'Abrir Mis Lukas igual';
+  } else if (!/[?&]abrir=1/.test(location.search)) {
+    // la dirección que queda guardada en el ícono lleva "?abrir=1": así el ícono salta directo a la app
+    history.replaceState(null, '', location.pathname + '?abrir=1');
+  }
 </script>
 </body>
 </html>
