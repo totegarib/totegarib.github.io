@@ -265,6 +265,151 @@ td.r,th.r{text-align:right}
 <div id="capa"></div>
 <div id="toast" role="status"></div>
 
+<script type="text/plain" id="widget-src">
+// Mis Lukas · widget para Scriptable
+// Muestra el resumen de tu Mis Lukas. La dirección de abajo lleva tu llave de solo lectura: no la compartas.
+const DIRECCION = "__URL__";
+
+const C = {
+  fondo: Color.dynamic(new Color("#FFFFFF"), new Color("#26202D")),
+  tinta: Color.dynamic(new Color("#2A2230"), new Color("#F3EEE4")),
+  gris: Color.dynamic(new Color("#6F6776"), new Color("#ABA2B3")),
+  morado: Color.dynamic(new Color("#6B5882"), new Color("#BBA9D6")),
+  naranjo: new Color("#D4860B"),
+  verde: Color.dynamic(new Color("#5E7A1F"), new Color("#B3CC62")),
+  rojo: Color.dynamic(new Color("#B23A1E"), new Color("#F08A6C"))
+};
+
+function plata(n) {
+  if (n === null || n === undefined) return "—";
+  const s = String(Math.round(Math.abs(n))).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return (n < 0 ? "−" : "") + "$" + s;
+}
+
+async function traer() {
+  const fm = FileManager.local();
+  const archivo = fm.joinPath(fm.documentsDirectory(), "mislukas-widget.json");
+  try {
+    const pedido = new Request(DIRECCION);
+    pedido.timeoutInterval = 25;
+    const d = await pedido.loadJSON();
+    if (d && d.ok) { fm.writeString(archivo, JSON.stringify(d)); return d; }
+    if (d && d.error === "llave") return { falla: "La llave cambió. Copia el código de nuevo desde Mis Lukas." };
+  } catch (e) {}
+  if (fm.fileExists(archivo)) {
+    try { const d = JSON.parse(fm.readString(archivo)); d.viejo = true; return d; } catch (e) {}
+  }
+  return { falla: "Sin conexión con Mis Lukas." };
+}
+
+function texto(donde, t, tam, color, negrita) {
+  const x = donde.addText(String(t));
+  x.font = negrita ? Font.boldSystemFont(tam) : Font.systemFont(tam);
+  x.textColor = color;
+  x.lineLimit = 1;
+  x.minimumScaleFactor = 0.6;
+  return x;
+}
+
+function marca(donde) {
+  const f = donde.addStack();
+  f.centerAlignContent();
+  texto(f, "Mis", 13, C.morado, true);
+  f.addSpacer(3);
+  texto(f, "Lukas", 13, C.naranjo, true);
+  return f;
+}
+
+function porPagarTotal(d) {
+  return (d.tarjetas || []).reduce(function (a, t) { return a + (t.porPagar || 0); }, 0);
+}
+
+function lineaPendientes(donde, d) {
+  if (d.pendientes > 0) texto(donde, d.pendientes + " por revisar", 12, C.rojo, true);
+  else texto(donde, "Todo revisado ✓", 12, C.verde, false);
+}
+
+function bloqueGasto(donde, d) {
+  texto(donde, (d.modo === "facturacion" ? "Facturas en curso" : "Gastaste en " + d.mes), 11, C.gris, false);
+  texto(donde, plata(d.gastado), 26, C.tinta, true);
+  if (d.presupuesto) {
+    const p = Math.round(d.presupuesto.usado / d.presupuesto.tope * 100);
+    texto(donde, p + "% del presupuesto", 11, p >= 100 ? C.rojo : p >= 80 ? C.naranjo : C.gris, false);
+  }
+}
+
+function armar(d, tam) {
+  const w = new ListWidget();
+  w.backgroundColor = C.fondo;
+  w.refreshAfterDate = new Date(Date.now() + 15 * 60 * 1000);
+
+  if (d.falla) {
+    marca(w); w.addSpacer(6);
+    const x = w.addText(d.falla); x.font = Font.systemFont(12); x.textColor = C.gris;
+    return w;
+  }
+
+  // pantalla de bloqueo
+  if (tam === "accessoryRectangular") {
+    const a = w.addText("Mis Lukas · " + d.mes); a.font = Font.boldSystemFont(12);
+    const b = w.addText(plata(d.gastado)); b.font = Font.boldSystemFont(18);
+    const c = w.addText(d.pendientes > 0 ? d.pendientes + " por revisar" : "Por pagar " + plata(porPagarTotal(d))); c.font = Font.systemFont(12);
+    return w;
+  }
+  if (tam === "accessoryInline") {
+    w.addText("Mis Lukas " + plata(d.gastado) + (d.pendientes > 0 ? " · " + d.pendientes + " por revisar" : ""));
+    return w;
+  }
+
+  w.setPadding(14, 14, 14, 14);
+
+  if (tam === "small") {
+    marca(w);
+    w.addSpacer();
+    bloqueGasto(w, d);
+    w.addSpacer(6);
+    texto(w, "Por pagar " + plata(porPagarTotal(d)), 12, C.tinta, false);
+    lineaPendientes(w, d);
+    return w;
+  }
+
+  // mediano (y grande)
+  const fila = w.addStack();
+  const izq = fila.addStack(); izq.layoutVertically();
+  marca(izq);
+  izq.addSpacer();
+  bloqueGasto(izq, d);
+  izq.addSpacer(6);
+  lineaPendientes(izq, d);
+
+  fila.addSpacer();
+
+  const der = fila.addStack(); der.layoutVertically();
+  texto(der, "POR PAGAR", 10, C.gris, true);
+  der.addSpacer(4);
+  const lista = (d.tarjetas || []).slice(0, 3);
+  for (let i = 0; i < lista.length; i++) {
+    const t = lista[i];
+    texto(der, t.nombre, 11, C.gris, false);
+    texto(der, t.porPagar === null || t.porPagar === undefined ? "—" : plata(t.porPagar), 16, C.tinta, true);
+    let pie = "";
+    if (t.porPagar) pie = t.vence ? "vence " + t.vence : "";
+    else if (t.porPagar === 0) pie = "al día";
+    if (pie) texto(der, pie, 10, t.diasVence !== null && t.diasVence !== undefined && t.diasVence <= 5 ? C.rojo : C.gris, false);
+    if (i < lista.length - 1) der.addSpacer(5);
+  }
+  der.addSpacer();
+  texto(der, (d.viejo ? "sin conexión · " : "") + d.hora, 9, C.gris, false);
+  return w;
+}
+
+const datos = await traer();
+const tam = config.widgetFamily || "medium";
+const widget = armar(datos, tam);
+if (config.runsInWidget) Script.setWidget(widget);
+else await widget.presentMedium();
+Script.complete();
+</script>
 <script>
 /* =================== estado =================== */
 const S = {
@@ -1509,6 +1654,29 @@ async function abrirConexionApp(nueva) {
     catch (e) { error(e); }
   };
 }
+async function abrirWidget(nueva) {
+  if (nueva && !confirm('Se cambiará la llave del widget: el que tengas instalado dejará de actualizarse hasta que pegues el código nuevo en Scriptable.')) return;
+  toast('Preparando…');
+  let w; try { w = await api('api_widget', !!nueva); } catch (e) { error(e); return; }
+  const li = (x) => '<ol class="muted" style="margin:0;padding-left:18px">' + x.map((y) => '<li>' + y + '</li>').join('') + '</ol>';
+  let h = '<div class="htop"><h2>Widget del iPhone</h2><button class="lnk" onclick="cerrar()">Cerrar</button></div>';
+  if (!w.url) {
+    h += '<div class="card"><b>Primero conecta la app del iPhone</b><span class="muted">El widget usa el mismo conector («Mis Lukas App»). Ve a Ajustes → App del iPhone, y vuelve aquí cuando esté conectada.</span></div>';
+    abrirHoja(h); return;
+  }
+  S.widgetCodigo = $('#widget-src').textContent.trim().replace('__URL__', w.url) + '\n';
+  h += '<div class="muted">Tu gasto del mes, lo que hay por pagar en cada tarjeta y cuántos movimientos faltan por revisar, a la vista en tu pantalla de inicio. Se actualiza solo cada cierto rato (el iPhone decide cuándo).</div>' +
+    '<div class="card"><span class="sect">Paso 1</span><b>Instala Scriptable</b><span class="muted">Es una app gratuita del App Store (ícono morado con llaves <b>{ }</b>). Es la que dibuja el widget.</span></div>' +
+    '<div class="card"><span class="sect">Paso 2</span><b>Pega el código</b>' +
+    li(['Toca el botón de abajo para copiar el código.', 'Abre <b>Scriptable</b> y toca el <b>+</b> de arriba a la derecha.', 'Mantén presionado en la pantalla vacía → <b>Pegar</b>.', 'Toca el nombre de arriba («Untitled Script») y cámbialo a <b>Mis Lukas</b>.', 'Toca ▶ (abajo a la derecha) para probar: debe aparecer el widget con tus números. Después toca <b>Done</b>.']) +
+    '<button class="btn pri full" onclick="copiar(S.widgetCodigo,\'Código del widget copiado\')">Copiar el código del widget</button>' +
+    '<span class="muted">Lleva una llave de solo lectura: quien la tenga puede ver estos totales y nada más. Igual, no la compartas.</span></div>' +
+    '<div class="card"><span class="sect">Paso 3</span><b>Ponlo en tu pantalla de inicio</b>' +
+    li(['Mantén presionado un espacio vacío de la pantalla de inicio → <b>Editar</b> → <b>Añadir widget</b>.', 'Busca <b>Scriptable</b>, elige el tamaño (el <b>mediano</b> muestra las tarjetas) y toca <b>Añadir widget</b>.', 'Toca el widget recién puesto (o mantenlo presionado → <b>Editar widget</b>) y en <b>Script</b> elige <b>Mis Lukas</b>.']) +
+    '<span class="muted">También sirve en la pantalla de bloqueo (tamaño rectangular).</span></div>' +
+    '<button class="lnk" onclick="abrirWidget(true)">Cambiar la llave del widget</button>';
+  abrirHoja(h);
+}
 function desconectarCelular() { try { localStorage.removeItem(CONEXION); localStorage.removeItem(CACHE); } catch (e) {} location.reload(); }
 
 /* =================== AJUSTES =================== */
@@ -1532,6 +1700,7 @@ function vAjustes() {
     (c.resumenCorreo ? '<button class="fila" onclick="probarResumen()"><span>✉️</span><span class="lnk">Enviarme uno de prueba</span><small></small><span class="v">›</span></button>' : '') +
     '<button class="fila" onclick="ir(\'categorias\')"><span>🗂️</span><span>Categorías</span><small>' + catsActivas().length + ' activas · presupuestos y emojis</small><span class="v">›</span></button>' +
     '<button class="fila" onclick="abrirConexionApp()"><span>📱</span><span>App del iPhone</span><small>' + (window.MISLUKAS_PWA ? 'Este celular está conectado' : c.appConectada ? 'Conectada · sin pestañas y a pantalla completa' : 'Tenla en tu pantalla de inicio, sin pestañas') + '</small><span class="v">›</span></button>' +
+    '<button class="fila" onclick="abrirWidget()"><span>🧩</span><span>Widget del iPhone</span><small>Tu resumen en la pantalla de inicio</small><span class="v">›</span></button>' +
     '<button class="fila" onclick="ir(\'fuentes\')"><span>📥</span><span>Fuentes y cartolas</span><small>' + c.lecturas.length + ' correos conectados</small><span class="v">›</span></button></div>';
   h += '<span class="sect">Tus datos</span><div class="grupo">' +
     '<button class="fila" onclick="editarDato(\'nombre\',\'Tu nombre\')"><span>👤</span><span>Nombre</span><small>' + (esc(c.nombre) || 'Sin completar') + '</small><span class="v">Editar ›</span></button>' +
@@ -2001,7 +2170,7 @@ const MOCK = (() => {
   [205000, 180000, 240000, 190000, 178000, 196000, 221000, 238000, 245000].forEach((v, i) => movs.push(mov({ fecha: f(35 + i * 30, '20:00'), tipo: 'gasto', medio: 'TC-1736', comercio: 'RESTORAN ' + i, monto: v, montoOriginal: v, categoria: 'Restoranes y delivery' })));
   [410000, 395000, 430000, 402000, 450000, 420000].forEach((v, i) => movs.push(mov({ fecha: f(33 + i * 30, '10:00'), tipo: 'gasto', medio: 'TC-1736', comercio: 'JUMBO ' + i, monto: v, montoOriginal: v, categoria: 'Supermercado' })));
   const d = {
-    version: '0.8.0', categorias: cats,
+    version: '0.9', categorias: cats,
     medios: [{ codigo: 'TC-1736', nombre: 'T. crédito Banco de Chile', tipo: 'tc', cierre: 20, pago: 5, orden: 1 }, { codigo: 'TC-9021', nombre: 'T. crédito Cencosud', tipo: 'tc', cierre: 25, pago: null, orden: 2 }, { codigo: 'CC-0608', nombre: 'Cuenta corriente', tipo: 'cc', orden: 3 }],
     movimientos: movs,
     deudas: [{ id: 'd1', persona: 'Marido', direccion: 'me_deben', tipo: 'compartido', concepto: 'JUMBO MAIPU', monto: 32190, fecha: f(1), estado: 'abierta', movId: 'm5' },
@@ -2012,7 +2181,7 @@ const MOCK = (() => {
     cartolasLeidas: [{ id: 'CART-TC-1736-x', medio: 'TC-1736', tipo: 'tc', desde: f(33).slice(0, 10), hasta: f(6).slice(0, 10), pagarHasta: f(-13).slice(0, 10), totalFacturado: 1801728, lineas: 48, verificados: 30, nuevos: 18, importado: f(1) }],
     config: { nombre: 'María José', rut: '', umbralAuto: 3, revisarTodos: false, tema: 'auto', paleta: 'ranunculo', paletaPropia: '', vistaDefecto: 'calendario', resumenCorreo: false, noSuscripcion: [], uf: {},
       compartirReglas: [{ clave: 'COM:JUMBO MAIPU', persona: 'Marido', modo: 'mitad', comercio: 'JUMBO MAIPU' }],
-      correoPrincipal: 'mjgaribsande@gmail.com', lecturas: [{ correo: 'mjgaribsande@gmail.com', fecha: f(0, '20:10'), version: '0.8.0' }, { correo: 'dra.mjgaribsande@gmail.com', fecha: f(0, '20:05'), version: '0.5.0' }] }
+      correoPrincipal: 'mjgaribsande@gmail.com', lecturas: [{ correo: 'mjgaribsande@gmail.com', fecha: f(0, '20:10'), version: '0.9' }, { correo: 'dra.mjgaribsande@gmail.com', fecha: f(0, '20:05'), version: '0.5.0' }] }
   };
   const busca = (id) => d.movimientos.find((m) => m.id === id);
   const copia = (x) => JSON.parse(JSON.stringify(x));
@@ -2031,7 +2200,7 @@ const MOCK = (() => {
     api_leerAhora: () => ({ nuevos: 0 }), api_compartir: (id, per, modo) => { const m = busca(id); m.detalle.compartido = { persona: per, modo, monto: Math.round(m.monto / 2) }; return { mov: copia(m), deudas: copia(d.deudas) }; },
     api_quitarCompartido: (id) => { const m = busca(id); delete m.detalle.compartido; return { mov: copia(m), deudas: copia(d.deudas) }; },
     api_crearDeuda: () => true, api_pagoDeuda: () => true, api_saldar: () => true, api_eliminarDeuda: () => true, api_quitarReglaCompartir: () => true,
-    api_resumenCorreo: () => true, api_probarResumen: () => true,
+    api_resumenCorreo: () => true, api_probarResumen: () => true, api_widget: () => ({ url: 'https://script.google.com/macros/s/DEMO/exec?w=demo' }),
     api_cartolasPendientes: () => [], api_crearMovimiento: (o) => { let md = o.medio; if (md === 'EFECTIVO') { md = 'EF-0000'; if (!d.medios.some((x) => x.codigo === md)) d.medios.push({ codigo: md, nombre: 'Efectivo', tipo: 'ef', orden: 9 }); }
       const m = mov({ fecha: o.fecha + ' 12:00', tipo: o.tipo, medio: md, comercio: o.comercio, monto: o.monto, montoOriginal: o.monto, categoria: o.categoria, notas: o.notas || '', fuente: 'manual', detalle: { sentido: o.tipo === 'ingreso' ? 'entra' : 'sale', manual: true } }); return { mov: copia(m), medios: copia(d.medios) }; }, api_conexionApp: () => ({ url: d.config.appUrl || '', codigo: d.config.appUrl ? 'MLK1:ejemplo' : '', idPlanilla: 'ID-PLANILLA' }), api_guardarAppUrl: (u) => { d.config.appUrl = u; return { url: u, codigo: 'MLK1:ejemplo', idPlanilla: 'ID-PLANILLA' }; }, api_prepararSms: () => ({ codigo: '/** receptor */', token: 'abc123', url: d.config.smsUrl || '' }), api_guardarSmsUrl: (u) => { d.config.smsUrl = u; return true; }, api_claveCartolas: () => '', api_guardarClaveCartolas: () => true, api_importarCartola: () => ({ verificados: 3, nuevos: 5 }), api_descargarCartola: () => { throw new Error('Sin correo en modo ejemplo'); }
   };
