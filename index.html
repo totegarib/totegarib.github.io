@@ -934,6 +934,7 @@ function vTarjeta() {
   const l = e.movsActual.slice().sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
   h += '<span class="sect">En esta factura</span>' + (l.length ? '<div class="list">' + l.slice(0, 6).map(filaMov).join('') + '</div>' : '<div class="muted">Aún no hay compras en este período.</div>');
   if (l.length > 6) h += '<button class="lnk" onclick="verPeriodo(' + js(t.codigo) + ',' + js(e.actual.iniS) + ',' + js(e.actual.finS) + ')">Ver los ' + l.length + ' movimientos del período ›</button>';
+  h += '<button class="lnk" onclick="abrirAbono(' + js(t.codigo) + ')">＋ Anotar un abono a esta tarjeta ›</button>';
   h += '<button class="lnk" onclick="subirCartola()">📄 Subir cartola de esta tarjeta ›</button>';
   h += '<button class="lnk" onclick="editarMedio(' + js(t.codigo) + ')">Editar día de cierre y de pago ›</button>';
   return h;
@@ -1007,30 +1008,42 @@ const NUEVO = { tipo: 'gasto', medio: '', categoria: '', monto: '', comercio: ''
 /** Abre el formulario de "Agregar" con los datos de un movimiento que anotaste a mano, para corregirlo. */
 function corregirManual(id) {
   const m = S.d.movimientos.find((x) => x.id === id); if (!m) return;
-  Object.assign(NUEVO, { id, tipo: m.tipo === 'ingreso' ? 'ingreso' : 'gasto', medio: medio(m.medio).tipo === 'ef' ? 'EFECTIVO' : m.medio, categoria: m.categoria || '',
+  Object.assign(NUEVO, { id, tipo: m.tipo === 'ingreso' || m.tipo === 'abono' ? m.tipo : 'gasto', medioAbono: (m.detalle && m.detalle.medioAbono) || '', medio: medio(m.medio).tipo === 'ef' ? 'EFECTIVO' : m.medio, categoria: m.categoria || '',
     monto: String(Math.abs(Math.round(m.monto || 0))), comercio: m.comercio || '', fecha: String(m.fecha).slice(0, 10), notas: m.notas || '' });
   abrirNuevo(true);
 }
+function abrirAbono(cod) {
+  const cc = S.d.medios.find((m) => m.tipo === 'cc');
+  Object.assign(NUEVO, { id: null, tipo: 'abono', medio: cc ? cc.codigo : 'EFECTIVO', medioAbono: cod, categoria: '', monto: '', comercio: 'Pago ' + medio(cod).nombre, fecha: fIso(new Date()), notas: '' });
+  abrirNuevo(true);
+}
 function abrirNuevo(mantener) {
-  if (!mantener) Object.assign(NUEVO, { id: null, tipo: 'gasto', medio: 'EFECTIVO', categoria: '', monto: '', comercio: '', fecha: fIso(new Date()), notas: '' });
+  if (!mantener) Object.assign(NUEVO, { id: null, tipo: 'gasto', medio: 'EFECTIVO', medioAbono: '', categoria: '', monto: '', comercio: '', fecha: fIso(new Date()), notas: '' });
+  const ab = NUEVO.tipo === 'abono';
   const n = NUEVO;
-  const medios = S.d.medios.filter((m) => m.tipo !== 'ef').sort((a, b) => a.orden - b.orden);
+  const medios = S.d.medios.filter((m) => m.tipo !== 'ef' && !(ab && m.tipo === 'tc')).sort((a, b) => a.orden - b.orden);
+  const chipT = (t) => '<button class="chip' + (n.medioAbono === t.codigo ? ' on' : '') + '" data-tc="' + esc(t.codigo) + '"><span class="dot" style="background:' + colorMedio(t.codigo) + '"></span>' + esc(t.nombre) + '</button>';
   const chip = (cod, txt) => '<button class="chip' + (n.medio === cod ? ' on' : '') + '" data-medio="' + esc(cod) + '">' + txt + '</button>';
   let h = '<div class="htop"><h2>' + (n.id ? 'Corregir movimiento' : 'Agregar un movimiento') + '</h2><button class="lnk" onclick="' + (n.id ? 'abrirEdicion(NUEVO.id)' : 'cerrar()') + '">Cancelar</button></div>' +
     '<div class="muted">' + (n.id ? 'Cambia lo que necesites y toca Guardar cambios.' : 'Para lo que el banco no avisa, como un pago en efectivo. Si después llega el aviso de esta misma compra, se junta con este y no se duplica.') + '</div>' +
-    '<div class="seg" id="nv-tipo"><button data-t="gasto" class="' + (n.tipo === 'gasto' ? 'on' : '') + '">Gasto</button><button data-t="ingreso" class="' + (n.tipo === 'ingreso' ? 'on' : '') + '">Ingreso</button></div>' +
+    '<div class="seg" id="nv-tipo"><button data-t="gasto" class="' + (n.tipo === 'gasto' ? 'on' : '') + '">Gasto</button><button data-t="ingreso" class="' + (n.tipo === 'ingreso' ? 'on' : '') + '">Ingreso</button>' + (tarjetas().length ? '<button data-t="abono" class="' + (ab ? 'on' : '') + '">Abono a tarjeta</button>' : '') + '</div>' +
+    (ab ? '<span class="sect">¿Qué tarjeta pagaste?</span><div class="chips" id="nv-tcs">' + tarjetas().map(chipT).join('') + '</div>' : '') +
     '<div class="dos"><label class="campo">Monto en pesos<input id="nv-monto" inputmode="numeric" placeholder="0" value="' + esc(n.monto) + '"></label>' +
     '<label class="campo">Fecha<input id="nv-fecha" type="date" max="' + fIso(new Date()) + '" value="' + esc(n.fecha) + '"></label></div>' +
-    '<label class="campo">' + (n.tipo === 'ingreso' ? '¿De quién o de qué?' : '¿Dónde o en qué?') + '<input id="nv-com" maxlength="80" placeholder="' + (n.tipo === 'ingreso' ? 'Ej: Venta del mueble' : 'Ej: Feria, propina, taxi') + '" value="' + esc(n.comercio) + '"></label>' +
-    '<span class="sect">' + (n.tipo === 'ingreso' ? 'Entró a' : 'Pagado con') + '</span><div class="chips" id="nv-medios">' + chip('EFECTIVO', '💵 Efectivo') + medios.map((m) => chip(m.codigo, '<span class="dot" style="background:' + colorMedio(m.codigo) + '"></span>' + esc(m.nombre))).join('') + '</div>' +
-    '<span class="sect">Categoría</span><div class="catlist" id="nv-cats">' + catsActivas(n.tipo).map((c) => '<button class="catopt' + (n.categoria === c.nombre ? ' sel' : '') + '" data-cat="' + esc(c.nombre) + '"><span class="ico sm">' + esc(c.emoji) + '</span>' + esc(c.nombre) + '</button>').join('') + '</div>' +
+    (ab ? '<input id="nv-com" type="hidden" value="' + esc(n.comercio) + '">' : '<label class="campo">' + (n.tipo === 'ingreso' ? '¿De quién o de qué?' : '¿Dónde o en qué?') + '<input id="nv-com" maxlength="80" placeholder="' + (n.tipo === 'ingreso' ? 'Ej: Venta del mueble' : 'Ej: Feria, propina, taxi') + '" value="' + esc(n.comercio) + '"></label>') +
+    '<span class="sect">' + (n.tipo === 'ingreso' ? 'Entró a' : ab ? 'Pagado desde' : 'Pagado con') + '</span><div class="chips" id="nv-medios">' + chip('EFECTIVO', '💵 Efectivo') + medios.map((m) => chip(m.codigo, '<span class="dot" style="background:' + colorMedio(m.codigo) + '"></span>' + esc(m.nombre))).join('') + '</div>' +
+    (ab ? '<span class="muted">No cuenta como gasto: descuenta de lo que tienes por pagar en esa tarjeta. Si después llega el aviso del banco de este pago, se junta con este.</span>' : '<span class="sect">Categoría</span><div class="catlist" id="nv-cats">' + catsActivas(n.tipo).map((c) => '<button class="catopt' + (n.categoria === c.nombre ? ' sel' : '') + '" data-cat="' + esc(c.nombre) + '"><span class="ico sm">' + esc(c.emoji) + '</span>' + esc(c.nombre) + '</button>').join('') + '</div>') +
     '<label class="campo">Nota (opcional)<input id="nv-notas" maxlength="120" value="' + esc(n.notas) + '"></label>' +
     '<button class="btn pri full" id="nv-ok">' + (n.id ? 'Guardar cambios' : 'Guardar') + '</button>';
   abrirHoja(h);
   const leer = () => { n.monto = $('#nv-monto').value.replace(/[^\d]/g, ''); n.comercio = $('#nv-com').value; n.fecha = $('#nv-fecha').value; n.notas = $('#nv-notas').value; };
-  $('#nv-tipo').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; leer(); n.tipo = b.dataset.t; n.categoria = ''; abrirNuevo(true); };
+  $('#nv-tipo').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; leer(); const antes = n.tipo; n.tipo = b.dataset.t; n.categoria = '';
+    if (n.tipo === 'abono') { if (esTarjeta(n.medio) || n.medio === 'EFECTIVO') { const cc = S.d.medios.find((m) => m.tipo === 'cc'); n.medio = cc ? cc.codigo : 'EFECTIVO'; } if (!n.medioAbono && tarjetas().length === 1) n.medioAbono = tarjetas()[0].codigo; n.comercio = n.medioAbono ? 'Pago ' + medio(n.medioAbono).nombre : ''; }
+    else if (antes === 'abono') n.comercio = '';
+    abrirNuevo(true); };
+  if ($('#nv-tcs')) $('#nv-tcs').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; leer(); n.medioAbono = b.dataset.tc; n.comercio = 'Pago ' + medio(n.medioAbono).nombre; abrirNuevo(true); };
   $('#nv-medios').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; leer(); n.medio = b.dataset.medio; abrirNuevo(true); };
-  $('#nv-cats').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; leer(); n.categoria = b.dataset.cat; abrirNuevo(true); };
+  if ($('#nv-cats')) $('#nv-cats').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; leer(); n.categoria = b.dataset.cat; abrirNuevo(true); };
   // si ya anotaste o confirmaste algo con ese mismo nombre, propone su categoría
   $('#nv-com').onchange = () => { leer(); if (n.categoria) return;
     const k = n.comercio.trim().toLowerCase(); if (!k) return;
@@ -1039,11 +1052,12 @@ function abrirNuevo(mantener) {
   $('#nv-ok').onclick = async () => {
     leer();
     if (!Number(n.monto)) { toast('Escribe el monto'); return; }
+    if (n.tipo === 'abono' && !n.medioAbono) { toast('Elige qué tarjeta pagaste'); return; }
     if (!n.comercio.trim()) { toast(n.tipo === 'ingreso' ? 'Escribe de qué es' : 'Escribe dónde o en qué'); return; }
     if (!n.fecha) { toast('Elige la fecha'); return; }
-    if (!n.categoria) { toast('Elige una categoría'); return; }
+    if (n.tipo !== 'abono' && !n.categoria) { toast('Elige una categoría'); return; }
     $('#nv-ok').disabled = true; $('#nv-ok').textContent = 'Guardando…';
-    const datos = { tipo: n.tipo, monto: Number(n.monto), comercio: n.comercio.trim(), fecha: n.fecha, medio: n.medio, categoria: n.categoria, notas: n.notas };
+    const datos = { tipo: n.tipo, monto: Number(n.monto), comercio: n.comercio.trim(), fecha: n.fecha, medio: n.medio, medioAbono: n.tipo === 'abono' ? n.medioAbono : '', categoria: n.tipo === 'abono' ? '' : n.categoria, notas: n.notas };
     try {
       if (n.id) { const r = await api('api_editarManual', n.id, datos); const i = S.d.movimientos.findIndex((x) => x.id === n.id);
         if (i >= 0) S.d.movimientos[i] = r.mov; if (r.medios) S.d.medios = r.medios; guardarCache(); cerrar(); render(); toast('Cambios guardados'); }
@@ -2238,7 +2252,7 @@ const MOCK = (() => {
   [205000, 180000, 240000, 190000, 178000, 196000, 221000, 238000, 245000].forEach((v, i) => movs.push(mov({ fecha: f(35 + i * 30, '20:00'), tipo: 'gasto', medio: 'TC-1736', comercio: 'RESTORAN ' + i, monto: v, montoOriginal: v, categoria: 'Restoranes y delivery' })));
   [410000, 395000, 430000, 402000, 450000, 420000].forEach((v, i) => movs.push(mov({ fecha: f(33 + i * 30, '10:00'), tipo: 'gasto', medio: 'TC-1736', comercio: 'JUMBO ' + i, monto: v, montoOriginal: v, categoria: 'Supermercado' })));
   const d = {
-    version: '0.9.3', categorias: cats,
+    version: '0.9.4', categorias: cats,
     medios: [{ codigo: 'TC-1736', nombre: 'T. crédito Banco de Chile', tipo: 'tc', cierre: 20, pago: 5, orden: 1 }, { codigo: 'TC-9021', nombre: 'T. crédito Cencosud', tipo: 'tc', cierre: 25, pago: null, orden: 2 }, { codigo: 'CC-0608', nombre: 'Cuenta corriente', tipo: 'cc', orden: 3 }],
     movimientos: movs,
     deudas: [{ id: 'd1', persona: 'Marido', direccion: 'me_deben', tipo: 'compartido', concepto: 'JUMBO MAIPU', monto: 32190, fecha: f(1), estado: 'abierta', movId: 'm5' },
@@ -2268,9 +2282,9 @@ const MOCK = (() => {
     api_leerAhora: () => ({ nuevos: 0 }), api_compartir: (id, per, modo) => { const m = busca(id); m.detalle.compartido = { persona: per, modo, monto: Math.round(m.monto / 2) }; return { mov: copia(m), deudas: copia(d.deudas) }; },
     api_quitarCompartido: (id) => { const m = busca(id); delete m.detalle.compartido; return { mov: copia(m), deudas: copia(d.deudas) }; },
     api_crearDeuda: () => true, api_pagoDeuda: () => true, api_saldar: () => true, api_eliminarDeuda: () => true, api_quitarReglaCompartir: () => true,
-    api_resumenCorreo: () => true, api_probarResumen: () => true, api_editarManual: (id, o) => { let m = busca(id); if (!m) { m = copia(S.d.movimientos.find((x) => x.id === id)); d.movimientos.push(m); } Object.assign(m, { tipo: o.tipo, monto: o.monto, montoOriginal: o.monto, comercio: o.comercio, categoria: o.categoria, notas: o.notas || '', medio: o.medio === 'EFECTIVO' ? 'EF-0000' : o.medio }); if (String(m.fecha).slice(0, 10) !== o.fecha) m.fecha = o.fecha + ' 12:00'; m.detalle = Object.assign({}, m.detalle, { sentido: o.tipo === 'ingreso' ? 'entra' : 'sale' }); return { mov: JSON.parse(JSON.stringify(m)), medios: JSON.parse(JSON.stringify(d.medios)) }; }, api_widget: () => ({ url: 'https://script.google.com/macros/s/DEMO/exec?w=demo' }),
+    api_resumenCorreo: () => true, api_probarResumen: () => true, api_editarManual: (id, o) => { let m = busca(id); if (!m) { m = copia(S.d.movimientos.find((x) => x.id === id)); d.movimientos.push(m); } if (o.tipo === 'abono') o.categoria = ''; Object.assign(m, { tipo: o.tipo, monto: o.monto, montoOriginal: o.monto, comercio: o.comercio, categoria: o.categoria, notas: o.notas || '', medio: o.medio === 'EFECTIVO' ? 'EF-0000' : o.medio }); if (String(m.fecha).slice(0, 10) !== o.fecha) m.fecha = o.fecha + ' 12:00'; m.detalle = Object.assign({}, m.detalle, { sentido: o.tipo === 'ingreso' ? 'entra' : 'sale' }); return { mov: JSON.parse(JSON.stringify(m)), medios: JSON.parse(JSON.stringify(d.medios)) }; }, api_widget: () => ({ url: 'https://script.google.com/macros/s/DEMO/exec?w=demo' }),
     api_cartolasPendientes: () => [], api_crearMovimiento: (o) => { let md = o.medio; if (md === 'EFECTIVO') { md = 'EF-0000'; if (!d.medios.some((x) => x.codigo === md)) d.medios.push({ codigo: md, nombre: 'Efectivo', tipo: 'ef', orden: 9 }); }
-      const m = mov({ fecha: o.fecha + ' 12:00', tipo: o.tipo, medio: md, comercio: o.comercio, monto: o.monto, montoOriginal: o.monto, categoria: o.categoria, notas: o.notas || '', fuente: 'manual', detalle: { sentido: o.tipo === 'ingreso' ? 'entra' : 'sale', manual: true } }); return { mov: copia(m), medios: copia(d.medios) }; }, api_conexionApp: () => ({ url: d.config.appUrl || '', codigo: d.config.appUrl ? 'MLK1:ejemplo' : '', idPlanilla: 'ID-PLANILLA' }), api_guardarAppUrl: (u) => { d.config.appUrl = u; return { url: u, codigo: 'MLK1:ejemplo', idPlanilla: 'ID-PLANILLA' }; }, api_prepararSms: () => ({ codigo: '/** receptor */', token: 'abc123', url: d.config.smsUrl || '' }), api_guardarSmsUrl: (u) => { d.config.smsUrl = u; return true; }, api_claveCartolas: () => '', api_guardarClaveCartolas: () => true, api_importarCartola: () => ({ verificados: 3, nuevos: 5 }), api_descargarCartola: () => { throw new Error('Sin correo en modo ejemplo'); }
+      const m = mov({ fecha: o.fecha + ' 12:00', tipo: o.tipo, medio: md, comercio: o.comercio, monto: o.monto, montoOriginal: o.monto, categoria: o.categoria, notas: o.notas || '', fuente: 'manual', detalle: Object.assign({ sentido: o.tipo === 'ingreso' ? 'entra' : 'sale', manual: true }, o.tipo === 'abono' ? { medioAbono: o.medioAbono } : {}) }); return { mov: copia(m), medios: copia(d.medios) }; }, api_conexionApp: () => ({ url: d.config.appUrl || '', codigo: d.config.appUrl ? 'MLK1:ejemplo' : '', idPlanilla: 'ID-PLANILLA' }), api_guardarAppUrl: (u) => { d.config.appUrl = u; return { url: u, codigo: 'MLK1:ejemplo', idPlanilla: 'ID-PLANILLA' }; }, api_prepararSms: () => ({ codigo: '/** receptor */', token: 'abc123', url: d.config.smsUrl || '' }), api_guardarSmsUrl: (u) => { d.config.smsUrl = u; return true; }, api_claveCartolas: () => '', api_guardarClaveCartolas: () => true, api_importarCartola: () => ({ verificados: 3, nuevos: 5 }), api_descargarCartola: () => { throw new Error('Sin correo en modo ejemplo'); }
   };
 })();
 
