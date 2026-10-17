@@ -168,15 +168,24 @@ nav.tabbar button.a .i{filter:none;opacity:1}
 .brow.ok .bar i{background:var(--ok)} .brow.w .bar i{background:var(--gold)} .brow.b .bar i{background:var(--bad)}
 .brow.w .v{color:var(--warn)} .brow.b .v{color:var(--bad)}
 .bl{display:flex;gap:8px;align-items:center;min-width:0}
-:root{--k1:#6B5882;--k2:#D4860B;--k3:#7E9A3A;--k4:#C0644A;--k5:#4C8597;--k6:#B9B0C3}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--k1:#A28BC0;--k2:#E39A2C;--k3:#9DB85A;--k4:#DE826A;--k5:#6FA9BB;--k6:#5F5569}}
-:root[data-theme="dark"]{--k1:#A28BC0;--k2:#E39A2C;--k3:#9DB85A;--k4:#DE826A;--k5:#6FA9BB;--k6:#5F5569}
+:root{--k1:#6B5882;--k2:#D4860B;--k3:#7E9A3A;--k4:#C0644A;--k5:#4C8597;--k6:#C9A227;--k7:#9B5C8F;--k8:#5E7FB8;--k9:#A47E62;--k10:#3F8F74;--k0:#B9B0C3}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--k1:#A28BC0;--k2:#E39A2C;--k3:#9DB85A;--k4:#DE826A;--k5:#6FA9BB;--k6:#E0C04E;--k7:#C186B4;--k8:#8AA6DA;--k9:#C9A386;--k10:#62B596;--k0:#5F5569}}
+:root[data-theme="dark"]{--k1:#A28BC0;--k2:#E39A2C;--k3:#9DB85A;--k4:#DE826A;--k5:#6FA9BB;--k6:#E0C04E;--k7:#C186B4;--k8:#8AA6DA;--k9:#C9A386;--k10:#62B596;--k0:#5F5569}
 .torta{display:grid;gap:14px;justify-items:center}
 .torta svg{width:170px;height:170px}
 .ley{display:grid;gap:9px;font-size:14px;width:100%}
 .ley button{display:grid;grid-template-columns:10px 1fr auto 38px;gap:8px;align-items:center;text-align:left;width:100%}
 .ley .d{width:10px;height:10px;border-radius:3px}
 .ley small{color:var(--muted);font-size:11.5px;display:block}
+.ley button.sel{background:var(--ground);border-radius:10px;margin:0 -6px;padding:4px 6px;width:calc(100% + 12px)}
+.ley .det{border-left:3px solid var(--line);margin:2px 0 6px 4px;padding-left:10px}
+.ley .det{display:grid;gap:2px}
+.ley .dm{display:grid;grid-template-columns:44px 1fr auto;gap:8px;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+.ley .dm:last-child{border-bottom:0}
+.ley .dm .f{color:var(--muted);font-size:12px}
+.ley .dm .c{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ley .dm small{color:var(--muted);font-size:11px}.ley .dm small.pr{color:var(--warn)}
+.torta circle{cursor:pointer;transition:opacity .15s}
 .v{font-weight:600}
 
 .dsum{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -761,23 +770,39 @@ function mesesAtras() {
   const [y, m] = primero.split('-').map(Number); const h = new Date();
   return Math.max(0, (h.getFullYear() - y) * 12 + h.getMonth() - (m - 1));
 }
-function agruparCats(gastos, n) {
+/** Gasto por categoría, de mayor a menor (créditos restan; sin categoría al final). */
+function porCategoria(movs) {
   const por = {};
-  gastos.forEach((m) => { const k = m.categoria || ''; por[k] = (por[k] || 0) + (m.monto || 0); });
-  let f = Object.keys(por).map((k) => ({ k, g: por[k] })).filter((x) => x.g > 0).sort((a, b) => b.g - a.g);
-  if (f.length > n) { const resto = f.slice(n - 1); f = f.slice(0, n - 1).concat([{ k: '__otras', g: resto.reduce((a, x) => a + x.g, 0), n: resto.length }]); }
-  return f;
+  movs.forEach((m) => { const k = m.categoria || ''; por[k] = (por[k] || 0) + (m.monto || 0); });
+  return Object.keys(por).map((k) => ({ k, g: por[k] })).filter((x) => x.g > 0)
+    .sort((a, b) => (!a.k) - (!b.k) || b.g - a.g)
+    .map((x, i) => Object.assign(x, { color: x.k ? 'var(--k' + ((i % 10) + 1) + ')' : 'var(--k0)' }));
 }
 function tortaCategorias(movs, total, extra, rotulo) {
-  const f = agruparCats(movs, 6); if (!f.length || total <= 0) return '';
+  const f = porCategoria(movs); if (!f.length || total <= 0) return '';
+  const sel = f.some((x) => x.k === S.tortaSel) ? S.tortaSel : null;
+  const suma0 = f.reduce((a, x) => a + x.g, 0);
   const R = 52, C = 2 * Math.PI * R; let ac = 0;
-  const arcos = f.map((x, i) => { const l = x.g / total * C; const seg = '<circle r="' + R + '" cx="66" cy="66" fill="none" stroke="var(--k' + (x.k === '__otras' || !x.k ? 6 : i + 1) + ')" stroke-width="20" stroke-dasharray="' + Math.max(0, l - 1.5).toFixed(1) + ' ' + C.toFixed(1) + '" stroke-dashoffset="' + (-ac).toFixed(1) + '" transform="rotate(-90 66 66)"/>'; ac += l; return seg; }).join('');
-  return '<div class="card num"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span class="sect" style="margin:0">Por categoría</span>' + (extra || '') + '</div><div class="torta"><svg viewBox="0 0 132 132">' + arcos +
-    '<text x="66" y="62" text-anchor="middle" font-size="11" fill="var(--muted)">' + (rotulo || 'en curso') + '</text><text x="66" y="80" text-anchor="middle" font-size="16" font-weight="700" fill="var(--ink)">' + clp(total) + '</text></svg><div class="ley">' +
-    f.map((x, i) => { const c = cat(x.k); const otras = x.k === '__otras';
-      return '<button onclick="' + (otras ? '' : x.k ? 'abrirCategoria(' + js(x.k) + ')' : 'ir(\'revisar\')') + '"><span class="d" style="background:var(--k' + (otras || !x.k ? 6 : i + 1) + ')"></span><span>' + (otras ? 'Otras (' + x.n + ')' : esc((c ? c.emoji + ' ' : '') + (x.k || 'Sin categoría'))) + '</span><span><b>' + clp(x.g) + '</b></span><small style="text-align:right">' + Math.round(x.g / total * 100) + '%</small></button>'; }).join('') +
-    '</div></div></div>';
+  const arcos = f.map((x) => { const l = x.g / suma0 * C;
+    const seg = '<circle r="' + R + '" cx="66" cy="66" fill="none" stroke="' + x.color + '" stroke-width="' + (x.k === sel ? 24 : 20) + '" stroke-dasharray="' + Math.max(0.5, l - (f.length > 1 ? 1.5 : 0)).toFixed(1) + ' ' + C.toFixed(1) + '" stroke-dashoffset="' + (-ac).toFixed(1) + '" transform="rotate(-90 66 66)" style="opacity:' + (sel === null || x.k === sel ? 1 : 0.25) + '" onclick="tortaElegir(' + js(x.k) + ')"/>';
+    ac += l; return seg; }).join('');
+  const xs = sel !== null ? f.find((x) => x.k === sel) : null;
+  const centro = xs ? '<text x="66" y="60" text-anchor="middle" font-size="10" fill="var(--muted)">' + esc((xs.k || 'Sin categoría').slice(0, 18)) + '</text><text x="66" y="77" text-anchor="middle" font-size="15" font-weight="700" fill="var(--ink)">' + clp(xs.g) + '</text><text x="66" y="91" text-anchor="middle" font-size="10" fill="var(--muted)">' + Math.round(xs.g / suma0 * 100) + '%</text>'
+    : '<text x="66" y="62" text-anchor="middle" font-size="11" fill="var(--muted)">' + (rotulo || 'en curso') + '</text><text x="66" y="80" text-anchor="middle" font-size="16" font-weight="700" fill="var(--ink)">' + clp(total) + '</text>';
+  const N = 6, todas = S.tortaTodas || f.length <= N + 1;
+  let ver = todas ? f : f.slice(0, N);
+  if (xs && ver.indexOf(xs) < 0) ver = ver.concat([xs]);
+  const fila = (x) => { const c = cat(x.k), on = x.k === sel;
+    let r = '<button class="' + (on ? 'sel' : '') + '" onclick="tortaElegir(' + js(x.k) + ')"><span class="d" style="background:' + x.color + '"></span><span>' + esc((c ? c.emoji + ' ' : '') + (x.k || 'Sin categoría')) + '</span><span><b>' + clp(x.g) + '</b></span><small style="text-align:right">' + (on ? '▾' : Math.round(x.g / suma0 * 100) + '%') + '</small></button>';
+    if (on) { const l = movs.filter((m) => (m.categoria || '') === x.k).sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
+      r += '<div class="det">' + l.map((m) => '<button class="dm" onclick="abrirEdicion(' + js(m.id) + ')"><span class="f">' + fCorta(m.fecha).split(' · ')[0] + '</span><span class="c">' + esc(m.comercio) + (m.cuotas ? ' <small>cuota ' + m.cuota + '/' + m.cuotas + '</small>' : '') + (m.estado === 'por_revisar' ? ' <small class="pr">por revisar</small>' : '') + '</span><b' + (m.monto < 0 ? ' class="in"' : '') + '>' + clp(m.monto) + '</b></button>').join('') + '</div>'; }
+    return r; };
+  return '<div class="card num"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span class="sect" style="margin:0">Por categoría</span>' + (extra || '') + '</div><div class="torta"><svg viewBox="0 0 132 132">' + arcos + centro + '</svg>' +
+    '<div class="ley">' + ver.map(fila).join('') +
+    (f.length > N + 1 ? '<button class="lnk" style="display:block" onclick="S.tortaTodas=!S.tortaTodas;render()">' + (S.tortaTodas ? 'Ver menos' : 'Ver más (' + (f.length - N) + ' categorías)') + '</button>' : '') +
+    '</div></div>' + (sel === null ? '<span class="muted" style="text-align:center">Toca una categoría para ver sus compras.</span>' : '') + '</div>';
 }
+function tortaElegir(k) { S.tortaSel = S.tortaSel === k ? null : k; render(); }
 function vInicio() {
   if (S.off > mesesAtras()) S.off = 0;
   const off = S.off, actual = off === 0;
@@ -885,11 +910,11 @@ function marcarVistos() {
 function irAviso(nivel, i) { const l = nivel ? avisos().filter((a) => a.nivel === nivel) : avisos(); if (l[i]) l[i].ir(); }
 
 /* =================== ESTADO DE TARJETA =================== */
-function abrirTarjeta(cod) { S.tarjeta = cod; ir('tarjeta'); }
+function abrirTarjeta(cod) { S.tarjeta = cod; S.tortaSel = null; ir('tarjeta'); }
 function vTarjeta() {
   const ts = tarjetas(); if (!ts.length) return '<div class="vacio">Aún no hay tarjetas de crédito.</div>';
   const t = ts.find((x) => x.codigo === S.tarjeta) || ts[0]; S.tarjeta = t.codigo;
-  let h = '<div class="chips">' + ts.map((x) => '<button class="chip' + (x.codigo === t.codigo ? ' on' : '') + '" onclick="S.tarjeta=' + js(x.codigo) + ';render()"><span class="dot" style="background:' + colorMedio(x.codigo) + '"></span>' + esc(x.nombre) + '</button>').join('') + '</div>';
+  let h = '<div class="chips">' + ts.map((x) => '<button class="chip' + (x.codigo === t.codigo ? ' on' : '') + '" onclick="S.tarjeta=' + js(x.codigo) + ';S.tortaSel=null;render()"><span class="dot" style="background:' + colorMedio(x.codigo) + '"></span>' + esc(x.nombre) + '</button>').join('') + '</div>';
   const e = estadoTarjeta(t);
   if (!e) return h + '<div class="card"><b>Falta el día de cierre</b><span class="muted">Con el día de cierre de la facturación, la app calcula cuánto debes pagar y cuánto llevas en la próxima factura.</span><button class="btn pri" onclick="editarMedio(' + js(t.codigo) + ')">Agregar día de cierre</button></div>';
   h += '<div class="card due num"><span class="sect">Última factura · ' + fDiaMes(e.anterior.ini) + ' – ' + fDiaMes(e.anterior.fin) + '</span>' +
@@ -903,7 +928,7 @@ function vTarjeta() {
     '<div class="timeline"><i style="width:' + Math.round(e.avance * 100) + '%"></i></div><div class="tl-l"><span>' + fDiaMes(e.actual.ini) + '</span><span>hoy</span><span>' + fDiaMes(e.actual.fin) + '</span></div></div>';
   { const ult = S.tortaPer === 'anterior';
     const movsT = ult ? facturables().filter((m) => m.medio === t.codigo && cuentaEnGasto(m) && String(m.fecha).slice(0, 10) >= e.anterior.iniS && String(m.fecha).slice(0, 10) <= e.anterior.finS) : e.movsActual;
-    const sel = '<div class="seg" style="font-size:12px;min-width:170px"><button class="' + (ult ? '' : 'on') + '" onclick="S.tortaPer=\'actual\';render()">En curso</button><button class="' + (ult ? 'on' : '') + '" onclick="S.tortaPer=\'anterior\';render()">Última factura</button></div>';
+    const sel = '<div class="seg" style="font-size:12px;min-width:170px"><button class="' + (ult ? '' : 'on') + '" onclick="S.tortaPer=\'actual\';S.tortaSel=null;render()">En curso</button><button class="' + (ult ? 'on' : '') + '" onclick="S.tortaPer=\'anterior\';S.tortaSel=null;render()">Última factura</button></div>';
     const tot = suma(movsT);
     h += tot > 0 ? tortaCategorias(movsT, tot, sel, ult ? 'facturado' : 'en curso') : '<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span class="sect" style="margin:0">Por categoría</span>' + sel + '</div><span class="muted">Aún no hay compras en este período.</span></div>'; }
   const l = e.movsActual.slice().sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
@@ -2213,7 +2238,7 @@ const MOCK = (() => {
   [205000, 180000, 240000, 190000, 178000, 196000, 221000, 238000, 245000].forEach((v, i) => movs.push(mov({ fecha: f(35 + i * 30, '20:00'), tipo: 'gasto', medio: 'TC-1736', comercio: 'RESTORAN ' + i, monto: v, montoOriginal: v, categoria: 'Restoranes y delivery' })));
   [410000, 395000, 430000, 402000, 450000, 420000].forEach((v, i) => movs.push(mov({ fecha: f(33 + i * 30, '10:00'), tipo: 'gasto', medio: 'TC-1736', comercio: 'JUMBO ' + i, monto: v, montoOriginal: v, categoria: 'Supermercado' })));
   const d = {
-    version: '0.9.2', categorias: cats,
+    version: '0.9.3', categorias: cats,
     medios: [{ codigo: 'TC-1736', nombre: 'T. crédito Banco de Chile', tipo: 'tc', cierre: 20, pago: 5, orden: 1 }, { codigo: 'TC-9021', nombre: 'T. crédito Cencosud', tipo: 'tc', cierre: 25, pago: null, orden: 2 }, { codigo: 'CC-0608', nombre: 'Cuenta corriente', tipo: 'cc', orden: 3 }],
     movimientos: movs,
     deudas: [{ id: 'd1', persona: 'Marido', direccion: 'me_deben', tipo: 'compartido', concepto: 'JUMBO MAIPU', monto: 32190, fecha: f(1), estado: 'abierta', movId: 'm5' },
