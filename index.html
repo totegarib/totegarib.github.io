@@ -168,6 +168,15 @@ nav.tabbar button.a .i{filter:none;opacity:1}
 .brow.ok .bar i{background:var(--ok)} .brow.w .bar i{background:var(--gold)} .brow.b .bar i{background:var(--bad)}
 .brow.w .v{color:var(--warn)} .brow.b .v{color:var(--bad)}
 .bl{display:flex;gap:8px;align-items:center;min-width:0}
+:root{--k1:#6B5882;--k2:#D4860B;--k3:#7E9A3A;--k4:#C0644A;--k5:#4C8597;--k6:#B9B0C3}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--k1:#A28BC0;--k2:#E39A2C;--k3:#9DB85A;--k4:#DE826A;--k5:#6FA9BB;--k6:#5F5569}}
+:root[data-theme="dark"]{--k1:#A28BC0;--k2:#E39A2C;--k3:#9DB85A;--k4:#DE826A;--k5:#6FA9BB;--k6:#5F5569}
+.torta{display:grid;gap:14px;justify-items:center}
+.torta svg{width:170px;height:170px}
+.ley{display:grid;gap:9px;font-size:14px;width:100%}
+.ley button{display:grid;grid-template-columns:10px 1fr auto 38px;gap:8px;align-items:center;text-align:left;width:100%}
+.ley .d{width:10px;height:10px;border-radius:3px}
+.ley small{color:var(--muted);font-size:11.5px;display:block}
 .v{font-weight:600}
 
 .dsum{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -752,6 +761,23 @@ function mesesAtras() {
   const [y, m] = primero.split('-').map(Number); const h = new Date();
   return Math.max(0, (h.getFullYear() - y) * 12 + h.getMonth() - (m - 1));
 }
+function agruparCats(gastos, n) {
+  const por = {};
+  gastos.forEach((m) => { const k = m.categoria || ''; por[k] = (por[k] || 0) + (m.monto || 0); });
+  let f = Object.keys(por).map((k) => ({ k, g: por[k] })).filter((x) => x.g > 0).sort((a, b) => b.g - a.g);
+  if (f.length > n) { const resto = f.slice(n - 1); f = f.slice(0, n - 1).concat([{ k: '__otras', g: resto.reduce((a, x) => a + x.g, 0), n: resto.length }]); }
+  return f;
+}
+function tortaCategorias(movs, total, extra, rotulo) {
+  const f = agruparCats(movs, 6); if (!f.length || total <= 0) return '';
+  const R = 52, C = 2 * Math.PI * R; let ac = 0;
+  const arcos = f.map((x, i) => { const l = x.g / total * C; const seg = '<circle r="' + R + '" cx="66" cy="66" fill="none" stroke="var(--k' + (x.k === '__otras' || !x.k ? 6 : i + 1) + ')" stroke-width="20" stroke-dasharray="' + Math.max(0, l - 1.5).toFixed(1) + ' ' + C.toFixed(1) + '" stroke-dashoffset="' + (-ac).toFixed(1) + '" transform="rotate(-90 66 66)"/>'; ac += l; return seg; }).join('');
+  return '<div class="card num"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span class="sect" style="margin:0">Por categoría</span>' + (extra || '') + '</div><div class="torta"><svg viewBox="0 0 132 132">' + arcos +
+    '<text x="66" y="62" text-anchor="middle" font-size="11" fill="var(--muted)">' + (rotulo || 'en curso') + '</text><text x="66" y="80" text-anchor="middle" font-size="16" font-weight="700" fill="var(--ink)">' + clp(total) + '</text></svg><div class="ley">' +
+    f.map((x, i) => { const c = cat(x.k); const otras = x.k === '__otras';
+      return '<button onclick="' + (otras ? '' : x.k ? 'abrirCategoria(' + js(x.k) + ')' : 'ir(\'revisar\')') + '"><span class="d" style="background:var(--k' + (otras || !x.k ? 6 : i + 1) + ')"></span><span>' + (otras ? 'Otras (' + x.n + ')' : esc((c ? c.emoji + ' ' : '') + (x.k || 'Sin categoría'))) + '</span><span><b>' + clp(x.g) + '</b></span><small style="text-align:right">' + Math.round(x.g / total * 100) + '%</small></button>'; }).join('') +
+    '</div></div></div>';
+}
 function vInicio() {
   if (S.off > mesesAtras()) S.off = 0;
   const off = S.off, actual = off === 0;
@@ -875,6 +901,11 @@ function vTarjeta() {
   h += '<div class="card num"><span class="sect">Período en curso · ' + fDiaMes(e.actual.ini) + ' – ' + fDiaMes(e.actual.fin) + '</span>' +
     '<div style="display:flex;justify-content:space-between;align-items:baseline"><b style="font-size:24px">' + clp(e.proxima) + '</b><span class="muted">' + (e.diasCierre ? 'cierra en ' + e.diasCierre + (e.diasCierre === 1 ? ' día' : ' días') : 'cierra hoy') + '</span></div>' +
     '<div class="timeline"><i style="width:' + Math.round(e.avance * 100) + '%"></i></div><div class="tl-l"><span>' + fDiaMes(e.actual.ini) + '</span><span>hoy</span><span>' + fDiaMes(e.actual.fin) + '</span></div></div>';
+  { const ult = S.tortaPer === 'anterior';
+    const movsT = ult ? facturables().filter((m) => m.medio === t.codigo && cuentaEnGasto(m) && String(m.fecha).slice(0, 10) >= e.anterior.iniS && String(m.fecha).slice(0, 10) <= e.anterior.finS) : e.movsActual;
+    const sel = '<div class="seg" style="font-size:12px;min-width:170px"><button class="' + (ult ? '' : 'on') + '" onclick="S.tortaPer=\'actual\';render()">En curso</button><button class="' + (ult ? 'on' : '') + '" onclick="S.tortaPer=\'anterior\';render()">Última factura</button></div>';
+    const tot = suma(movsT);
+    h += tot > 0 ? tortaCategorias(movsT, tot, sel, ult ? 'facturado' : 'en curso') : '<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span class="sect" style="margin:0">Por categoría</span>' + sel + '</div><span class="muted">Aún no hay compras en este período.</span></div>'; }
   const l = e.movsActual.slice().sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
   h += '<span class="sect">En esta factura</span>' + (l.length ? '<div class="list">' + l.slice(0, 6).map(filaMov).join('') + '</div>' : '<div class="muted">Aún no hay compras en este período.</div>');
   if (l.length > 6) h += '<button class="lnk" onclick="verPeriodo(' + js(t.codigo) + ',' + js(e.actual.iniS) + ',' + js(e.actual.finS) + ')">Ver los ' + l.length + ' movimientos del período ›</button>';
@@ -948,13 +979,20 @@ function bloqueReembolsos(nombre) {
 
 /* =================== AGREGAR UN MOVIMIENTO A MANO =================== */
 const NUEVO = { tipo: 'gasto', medio: '', categoria: '', monto: '', comercio: '', fecha: '', notas: '' };
+/** Abre el formulario de "Agregar" con los datos de un movimiento que anotaste a mano, para corregirlo. */
+function corregirManual(id) {
+  const m = S.d.movimientos.find((x) => x.id === id); if (!m) return;
+  Object.assign(NUEVO, { id, tipo: m.tipo === 'ingreso' ? 'ingreso' : 'gasto', medio: medio(m.medio).tipo === 'ef' ? 'EFECTIVO' : m.medio, categoria: m.categoria || '',
+    monto: String(Math.abs(Math.round(m.monto || 0))), comercio: m.comercio || '', fecha: String(m.fecha).slice(0, 10), notas: m.notas || '' });
+  abrirNuevo(true);
+}
 function abrirNuevo(mantener) {
-  if (!mantener) Object.assign(NUEVO, { tipo: 'gasto', medio: 'EFECTIVO', categoria: '', monto: '', comercio: '', fecha: fIso(new Date()), notas: '' });
+  if (!mantener) Object.assign(NUEVO, { id: null, tipo: 'gasto', medio: 'EFECTIVO', categoria: '', monto: '', comercio: '', fecha: fIso(new Date()), notas: '' });
   const n = NUEVO;
   const medios = S.d.medios.filter((m) => m.tipo !== 'ef').sort((a, b) => a.orden - b.orden);
   const chip = (cod, txt) => '<button class="chip' + (n.medio === cod ? ' on' : '') + '" data-medio="' + esc(cod) + '">' + txt + '</button>';
-  let h = '<div class="htop"><h2>Agregar un movimiento</h2><button class="lnk" onclick="cerrar()">Cancelar</button></div>' +
-    '<div class="muted">Para lo que el banco no avisa, como un pago en efectivo. Si después llega el aviso de esta misma compra, se junta con este y no se duplica.</div>' +
+  let h = '<div class="htop"><h2>' + (n.id ? 'Corregir movimiento' : 'Agregar un movimiento') + '</h2><button class="lnk" onclick="' + (n.id ? 'abrirEdicion(NUEVO.id)' : 'cerrar()') + '">Cancelar</button></div>' +
+    '<div class="muted">' + (n.id ? 'Cambia lo que necesites y toca Guardar cambios.' : 'Para lo que el banco no avisa, como un pago en efectivo. Si después llega el aviso de esta misma compra, se junta con este y no se duplica.') + '</div>' +
     '<div class="seg" id="nv-tipo"><button data-t="gasto" class="' + (n.tipo === 'gasto' ? 'on' : '') + '">Gasto</button><button data-t="ingreso" class="' + (n.tipo === 'ingreso' ? 'on' : '') + '">Ingreso</button></div>' +
     '<div class="dos"><label class="campo">Monto en pesos<input id="nv-monto" inputmode="numeric" placeholder="0" value="' + esc(n.monto) + '"></label>' +
     '<label class="campo">Fecha<input id="nv-fecha" type="date" max="' + fIso(new Date()) + '" value="' + esc(n.fecha) + '"></label></div>' +
@@ -962,7 +1000,7 @@ function abrirNuevo(mantener) {
     '<span class="sect">' + (n.tipo === 'ingreso' ? 'Entró a' : 'Pagado con') + '</span><div class="chips" id="nv-medios">' + chip('EFECTIVO', '💵 Efectivo') + medios.map((m) => chip(m.codigo, '<span class="dot" style="background:' + colorMedio(m.codigo) + '"></span>' + esc(m.nombre))).join('') + '</div>' +
     '<span class="sect">Categoría</span><div class="catlist" id="nv-cats">' + catsActivas(n.tipo).map((c) => '<button class="catopt' + (n.categoria === c.nombre ? ' sel' : '') + '" data-cat="' + esc(c.nombre) + '"><span class="ico sm">' + esc(c.emoji) + '</span>' + esc(c.nombre) + '</button>').join('') + '</div>' +
     '<label class="campo">Nota (opcional)<input id="nv-notas" maxlength="120" value="' + esc(n.notas) + '"></label>' +
-    '<button class="btn pri full" id="nv-ok">Guardar</button>';
+    '<button class="btn pri full" id="nv-ok">' + (n.id ? 'Guardar cambios' : 'Guardar') + '</button>';
   abrirHoja(h);
   const leer = () => { n.monto = $('#nv-monto').value.replace(/[^\d]/g, ''); n.comercio = $('#nv-com').value; n.fecha = $('#nv-fecha').value; n.notas = $('#nv-notas').value; };
   $('#nv-tipo').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; leer(); n.tipo = b.dataset.t; n.categoria = ''; abrirNuevo(true); };
@@ -980,9 +1018,13 @@ function abrirNuevo(mantener) {
     if (!n.fecha) { toast('Elige la fecha'); return; }
     if (!n.categoria) { toast('Elige una categoría'); return; }
     $('#nv-ok').disabled = true; $('#nv-ok').textContent = 'Guardando…';
-    try { const r = await api('api_crearMovimiento', { tipo: n.tipo, monto: Number(n.monto), comercio: n.comercio.trim(), fecha: n.fecha, medio: n.medio, categoria: n.categoria, notas: n.notas });
-      S.d.movimientos.push(r.mov); if (r.medios) S.d.medios = r.medios; guardarCache(); cerrar(); render(); toast('Movimiento agregado'); }
-    catch (e) { $('#nv-ok').disabled = false; $('#nv-ok').textContent = 'Guardar'; error(e); }
+    const datos = { tipo: n.tipo, monto: Number(n.monto), comercio: n.comercio.trim(), fecha: n.fecha, medio: n.medio, categoria: n.categoria, notas: n.notas };
+    try {
+      if (n.id) { const r = await api('api_editarManual', n.id, datos); const i = S.d.movimientos.findIndex((x) => x.id === n.id);
+        if (i >= 0) S.d.movimientos[i] = r.mov; if (r.medios) S.d.medios = r.medios; guardarCache(); cerrar(); render(); toast('Cambios guardados'); }
+      else { const r = await api('api_crearMovimiento', datos);
+        S.d.movimientos.push(r.mov); if (r.medios) S.d.medios = r.medios; guardarCache(); cerrar(); render(); toast('Movimiento agregado'); } }
+    catch (e) { $('#nv-ok').disabled = false; $('#nv-ok').textContent = n.id ? 'Guardar cambios' : 'Guardar'; error(e); }
   };
 }
 
@@ -1324,6 +1366,7 @@ function abrirEdicion(id, mantener) {
   let h = '<div class="htop"><h2>' + esc(m.comercio) + '</h2><button class="lnk" onclick="cerrar()">Cerrar</button></div>';
   h += '<div class="big num' + (m.tipo === 'ingreso' || m.tipo === 'abono' || m.monto < 0 ? ' in' : m.tipo === 'entre_cuentas' ? ' nx' : '') + '" style="font-size:30px">' + (m.monto != null ? clp(m.monto) : 'Sin monto') + '</div>';
   h += '<div class="act"><button class="pick" onclick="abrirPicker(' + js(id) + ',false)">' + nombrePick(m) + '</button>' + (m.tipo === 'gasto' && m.monto > 0 ? '<button class="btn" onclick="abrirCompartir(' + js(id) + ')">' + (det.compartido ? '🤝 ' + esc(det.compartido.persona) + ' · ' + clp(det.compartido.monto) : 'Compartir') + '</button>' : '') + '</div>';
+  if (m0.fuente === 'manual' && !det.avisoBanco && !det.desdeCartola && !det.verificado) h += '<button class="fila" style="border:1px solid var(--line);border-radius:12px;padding:10px 12px" onclick="corregirManual(' + js(id) + ')"><span>✏️</span><span>Corregir lo que anotaste</span><small>Monto, fecha, medio, descripción o tipo</small><span class="v">›</span></button>';
   const tiposOk = Object.keys(TIPOS).filter((t) => tipoCompatible(m0, t));
   if (tiposOk.length > 1) h += '<div class="seg" id="e-tipo">' + tiposOk.map((t) => '<button data-t="' + t + '" class="' + (m.tipo === t ? 'on' : '') + '">' + (t === 'entre_cuentas' ? 'Entre cuentas' : t === 'abono' ? 'Abono' : TIPOS[t]) + '</button>').join('') + '</div>';
   if (esReembolsoSalud(m)) { const v = (m0.detalle && m0.detalle.reembolsa) || [];
@@ -2170,7 +2213,7 @@ const MOCK = (() => {
   [205000, 180000, 240000, 190000, 178000, 196000, 221000, 238000, 245000].forEach((v, i) => movs.push(mov({ fecha: f(35 + i * 30, '20:00'), tipo: 'gasto', medio: 'TC-1736', comercio: 'RESTORAN ' + i, monto: v, montoOriginal: v, categoria: 'Restoranes y delivery' })));
   [410000, 395000, 430000, 402000, 450000, 420000].forEach((v, i) => movs.push(mov({ fecha: f(33 + i * 30, '10:00'), tipo: 'gasto', medio: 'TC-1736', comercio: 'JUMBO ' + i, monto: v, montoOriginal: v, categoria: 'Supermercado' })));
   const d = {
-    version: '0.9', categorias: cats,
+    version: '0.9.2', categorias: cats,
     medios: [{ codigo: 'TC-1736', nombre: 'T. crédito Banco de Chile', tipo: 'tc', cierre: 20, pago: 5, orden: 1 }, { codigo: 'TC-9021', nombre: 'T. crédito Cencosud', tipo: 'tc', cierre: 25, pago: null, orden: 2 }, { codigo: 'CC-0608', nombre: 'Cuenta corriente', tipo: 'cc', orden: 3 }],
     movimientos: movs,
     deudas: [{ id: 'd1', persona: 'Marido', direccion: 'me_deben', tipo: 'compartido', concepto: 'JUMBO MAIPU', monto: 32190, fecha: f(1), estado: 'abierta', movId: 'm5' },
@@ -2200,7 +2243,7 @@ const MOCK = (() => {
     api_leerAhora: () => ({ nuevos: 0 }), api_compartir: (id, per, modo) => { const m = busca(id); m.detalle.compartido = { persona: per, modo, monto: Math.round(m.monto / 2) }; return { mov: copia(m), deudas: copia(d.deudas) }; },
     api_quitarCompartido: (id) => { const m = busca(id); delete m.detalle.compartido; return { mov: copia(m), deudas: copia(d.deudas) }; },
     api_crearDeuda: () => true, api_pagoDeuda: () => true, api_saldar: () => true, api_eliminarDeuda: () => true, api_quitarReglaCompartir: () => true,
-    api_resumenCorreo: () => true, api_probarResumen: () => true, api_widget: () => ({ url: 'https://script.google.com/macros/s/DEMO/exec?w=demo' }),
+    api_resumenCorreo: () => true, api_probarResumen: () => true, api_editarManual: (id, o) => { let m = busca(id); if (!m) { m = copia(S.d.movimientos.find((x) => x.id === id)); d.movimientos.push(m); } Object.assign(m, { tipo: o.tipo, monto: o.monto, montoOriginal: o.monto, comercio: o.comercio, categoria: o.categoria, notas: o.notas || '', medio: o.medio === 'EFECTIVO' ? 'EF-0000' : o.medio }); if (String(m.fecha).slice(0, 10) !== o.fecha) m.fecha = o.fecha + ' 12:00'; m.detalle = Object.assign({}, m.detalle, { sentido: o.tipo === 'ingreso' ? 'entra' : 'sale' }); return { mov: JSON.parse(JSON.stringify(m)), medios: JSON.parse(JSON.stringify(d.medios)) }; }, api_widget: () => ({ url: 'https://script.google.com/macros/s/DEMO/exec?w=demo' }),
     api_cartolasPendientes: () => [], api_crearMovimiento: (o) => { let md = o.medio; if (md === 'EFECTIVO') { md = 'EF-0000'; if (!d.medios.some((x) => x.codigo === md)) d.medios.push({ codigo: md, nombre: 'Efectivo', tipo: 'ef', orden: 9 }); }
       const m = mov({ fecha: o.fecha + ' 12:00', tipo: o.tipo, medio: md, comercio: o.comercio, monto: o.monto, montoOriginal: o.monto, categoria: o.categoria, notas: o.notas || '', fuente: 'manual', detalle: { sentido: o.tipo === 'ingreso' ? 'entra' : 'sale', manual: true } }); return { mov: copia(m), medios: copia(d.medios) }; }, api_conexionApp: () => ({ url: d.config.appUrl || '', codigo: d.config.appUrl ? 'MLK1:ejemplo' : '', idPlanilla: 'ID-PLANILLA' }), api_guardarAppUrl: (u) => { d.config.appUrl = u; return { url: u, codigo: 'MLK1:ejemplo', idPlanilla: 'ID-PLANILLA' }; }, api_prepararSms: () => ({ codigo: '/** receptor */', token: 'abc123', url: d.config.smsUrl || '' }), api_guardarSmsUrl: (u) => { d.config.smsUrl = u; return true; }, api_claveCartolas: () => '', api_guardarClaveCartolas: () => true, api_importarCartola: () => ({ verificados: 3, nuevos: 5 }), api_descargarCartola: () => { throw new Error('Sin correo en modo ejemplo'); }
   };
