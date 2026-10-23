@@ -869,6 +869,8 @@ function vInicio() {
     if (cartNuevas.length) h += '<button class="alerta" onclick="ir(\'fuentes\')"><span>📬</span><span>' + (cartNuevas.length === 1 ? 'Llegó una cartola nueva a tu correo' : 'Llegaron ' + cartNuevas.length + ' cartolas nuevas a tu correo') + '</span><span class="go">Ver</span></button>';
     const smsNuevos = ((S.d.config.sms || {}).noReconocidos || []).filter((x) => !esVisto('sms:' + x.id));
     if (smsNuevos.length) h += '<button class="alerta w" onclick="ir(\'fuentes\')"><span>📱</span><span>' + (smsNuevos.length === 1 ? 'Llegó un aviso que no reconocí' : 'Llegaron ' + smsNuevos.length + ' avisos que no reconocí') + '</span><span class="go">Ver</span></button>';
+    const sinAnotar = (S.d.config.ignorados || []).filter((x) => !x.pendiente);
+    if (sinAnotar.length) h += '<button class="alerta w" onclick="ir(\'fuentes\')"><span>✉️</span><span>' + (sinAnotar.length === 1 ? 'Un correo del banco no se anotó: revísalo' : sinAnotar.length + ' correos del banco no se anotaron: revísalos') + '</span><span class="go">Ver</span></button>';
     lectoresViejos().forEach((l) => { h += '<button class="alerta w" onclick="ir(\'fuentes\')"><span>⚙️</span><span>El proyecto de ' + esc(l.correo) + ' tiene la versión ' + esc(l.version || 'anterior a 0.6') + ' y la app la ' + esc(S.d.version) + ': deben ser iguales</span><span class="go">Ver</span></button>'; });
     if (pend) h += '<button class="alerta" onclick="ir(\'revisar\')"><span class="dot" style="background:var(--accent)"></span><span>' + pend + (pend === 1 ? ' movimiento espera' : ' movimientos esperan') + ' tu revisión</span><span class="go">Revisar</span></button>';
     const graves = avisosNuevos().filter((a) => a.nivel === 'b');
@@ -1416,6 +1418,7 @@ function abrirEdicion(id, mantener) {
   if (sentidoDe(m0) === 'credito') h += '<div class="muted">Crédito en tu tarjeta según el banco (descuento o devolución): resta del gasto de su categoría. Solo cambias la categoría.</div>';
   if (m.tipo === 'gasto' && esTarjeta(m.medio) && m.monto > 0) h += '<button class="fila" style="border:1px solid var(--line);border-radius:12px;padding:10px 12px" onclick="abrirCuotas(' + js(id) + ')"><span>🧾</span><span>' + (nCuotas(m) > 1 ? nCuotas(m) + ' cuotas de ' + clp(valorCuota(m)) : 'Al contado (1 cuota)') + '</span><small>Cada mes cuenta solo la cuota que se factura</small><span class="v">Cambiar ›</span></button>';
   const deCartola = !!(det.desdeCartola || det.verificado);
+  if (!deCartola && m0.fuente !== 'manual' && m0.fuente !== 'cartola' && sentidoDe(m0) !== 'credito') h += '<button class="lnk" onclick="invertirSentido(' + js(id) + ')">' + (sentidoDe(m0) === 'entra' ? '¿Se leyó al revés? Es un pago o cargo, no un ingreso' : '¿Se leyó al revés? Es plata que entró, no un cargo') + '</button>';
   h += '<div class="dos"><label class="campo">Monto en pesos' + (deCartola ? '<span style="color:var(--ink);font-size:15px;padding:9px 0">' + clp(m.monto) + ' · según la cartola</span><input id="e-monto" type="hidden" value="">' : '<input id="e-monto" inputmode="numeric" value="' + (m.monto != null ? Math.abs(Math.round(m.monto)) : '') + '">') + '</label><label class="campo">Nota<input id="e-notas" maxlength="120" value="' + esc(m.notas) + '"></label></div>';
   h += '<div class="kvd">' + kv('Fecha', fCorta(m.fecha)) + kv('Medio', esc(medio(m.medio).nombre)) +
     (m.moneda === 'USD' ? kv('Monto original', usd(m.montoOriginal) + (m.estimado ? ' (pesos estimados con el dólar del día)' : '')) : '') +
@@ -1611,11 +1614,38 @@ function vAvisos() {
 }
 
 /* =================== FUENTES Y CARTOLAS =================== */
+/** Correos del banco que la app no anotó: cada uno espera que decidas. Así nada se pierde sin que lo sepas. */
+function bloqueSinAnotar() {
+  const l = S.d.config.ignorados || [];
+  let h = '<span class="sect">Correos del banco sin anotar</span>';
+  if (!l.length) return h + '<div class="muted">✓ Todos los correos del banco de los últimos 45 días se anotaron o los descartaste.</div>';
+  h += '<div class="muted">No los reconocí como movimientos. Si alguno es un gasto o un pago, toca <b>Anotar</b> y quedará en Por revisar para que completes lo que falte.</div><div class="list">';
+  h += l.map((x) => '<div class="tx"><div class="ico">✉️</div><div style="min-width:0"><div class="name" style="white-space:normal">' + esc(x.asunto || '(sin asunto)') + '</div><div class="meta">' + fCorta(x.fecha) + (x.correo !== S.d.config.correoPrincipal ? ' · ' + esc(x.correo) : '') + '</div></div>' +
+    (x.pendiente ? '<div class="muted" style="text-align:right">Se anotará<br>en minutos</div>' : '<div style="display:grid;gap:4px;justify-items:end"><button class="btn pri" style="padding:6px 12px" onclick="forzarCorreo(' + js(x.msgId) + ')">Anotar</button><button class="lnk" style="font-size:12px" onclick="descartarCorreo(' + js(x.msgId) + ')">No es movimiento</button></div>') + '</div>').join('');
+  return h + '</div>';
+}
+async function forzarCorreo(id) {
+  toast('Anotando…');
+  try { const r = await api('api_forzarCorreo', id); const x = (S.d.config.ignorados || []).find((y) => y.msgId === id);
+    if (r.mov) { S.d.movimientos.push(r.mov); S.d.config.ignorados = S.d.config.ignorados.filter((y) => y.msgId !== id); toast('Anotado: quedó en Por revisar'); }
+    else if (r.pendiente) { if (x) x.pendiente = true; toast('Es del otro correo: se anotará en la próxima revisión'); }
+    else { S.d.config.ignorados = S.d.config.ignorados.filter((y) => y.msgId !== id); toast('Tienes una regla que ignora ese aviso'); }
+    guardarCache(); render(); } catch (e) { error(e); }
+}
+async function descartarCorreo(id) {
+  const antes = S.d.config.ignorados; S.d.config.ignorados = antes.filter((y) => y.msgId !== id); render();
+  try { await api('api_descartarCorreo', id); guardarCache(); } catch (e) { S.d.config.ignorados = antes; render(); error(e); }
+}
+async function invertirSentido(id) {
+  try { const r = await api('api_invertirSentido', id); const i = S.d.movimientos.findIndex((x) => x.id === id); if (i >= 0) S.d.movimientos[i] = r; guardarCache(); render(); abrirEdicion(id); toast(r.tipo === 'gasto' ? 'Ahora es un cargo: elige su categoría' : 'Ahora es un ingreso: elige de qué es'); }
+  catch (e) { error(e); }
+}
 function vFuentes() {
   if (!vFuentes.pedido) { vFuentes.pedido = true; api('api_cartolasPendientes').then((l) => { S.pendientes = l || []; if (S.vista === 'fuentes') render(); }).catch(() => {}); api('api_claveCartolas').then((c) => { S.claves = listaClaves(c); if (S.vista === 'fuentes') render(); }).catch(() => {}); }
   const c = S.d.config;
   let h = '<span class="sect">Correos conectados</span><div class="grupo">' + (c.lecturas.length ? c.lecturas.map((l) =>
     '<div class="fila"><span>✉️</span><span style="overflow-wrap:anywhere">' + esc(l.correo) + '</span><small>Última revisión: ' + fCorta(l.fecha) + ' · versión ' + esc(l.version || 'anterior a 0.6') + '</small>' + (l.correo !== c.correoPrincipal && l.version !== S.d.version ? '<span class="v" style="color:var(--warn)">Actualizar</span>' : '<span class="v" style="color:var(--ok)">Conectado</span>') + '</div>').join('') : '<div class="fila"><span>✉️</span><span>Aún no hay lecturas</span></div>') + '</div>';
+  h += bloqueSinAnotar();
   h += '<button class="btn full" onclick="revisarAhora()">↻ Revisar mis correos ahora</button>';
   h += '<button class="btn pri full" onclick="subirCartola()">📄 Subir cartola (PDF)</button>';
   h += '<div class="muted">Sirve la cartola original que te llega al correo, con clave. Se abre y se lee aquí mismo; antes de guardar nada verás lo que leyó. Lee la cuenta corriente, la línea de crédito y la tarjeta de crédito del Banco de Chile (pesos y dólares), y la tarjeta Cencosud.</div>';
@@ -2252,7 +2282,7 @@ const MOCK = (() => {
   [205000, 180000, 240000, 190000, 178000, 196000, 221000, 238000, 245000].forEach((v, i) => movs.push(mov({ fecha: f(35 + i * 30, '20:00'), tipo: 'gasto', medio: 'TC-1736', comercio: 'RESTORAN ' + i, monto: v, montoOriginal: v, categoria: 'Restoranes y delivery' })));
   [410000, 395000, 430000, 402000, 450000, 420000].forEach((v, i) => movs.push(mov({ fecha: f(33 + i * 30, '10:00'), tipo: 'gasto', medio: 'TC-1736', comercio: 'JUMBO ' + i, monto: v, montoOriginal: v, categoria: 'Supermercado' })));
   const d = {
-    version: '0.9.4', categorias: cats,
+    version: '0.9.5', categorias: cats,
     medios: [{ codigo: 'TC-1736', nombre: 'T. crédito Banco de Chile', tipo: 'tc', cierre: 20, pago: 5, orden: 1 }, { codigo: 'TC-9021', nombre: 'T. crédito Cencosud', tipo: 'tc', cierre: 25, pago: null, orden: 2 }, { codigo: 'CC-0608', nombre: 'Cuenta corriente', tipo: 'cc', orden: 3 }],
     movimientos: movs,
     deudas: [{ id: 'd1', persona: 'Marido', direccion: 'me_deben', tipo: 'compartido', concepto: 'JUMBO MAIPU', monto: 32190, fecha: f(1), estado: 'abierta', movId: 'm5' },
@@ -2263,6 +2293,7 @@ const MOCK = (() => {
     cartolasLeidas: [{ id: 'CART-TC-1736-x', medio: 'TC-1736', tipo: 'tc', desde: f(33).slice(0, 10), hasta: f(6).slice(0, 10), pagarHasta: f(-13).slice(0, 10), totalFacturado: 1801728, lineas: 48, verificados: 30, nuevos: 18, importado: f(1) }],
     config: { nombre: 'María José', rut: '', umbralAuto: 3, revisarTodos: false, tema: 'auto', paleta: 'ranunculo', paletaPropia: '', vistaDefecto: 'calendario', resumenCorreo: false, noSuscripcion: [], uf: {},
       compartirReglas: [{ clave: 'COM:JUMBO MAIPU', persona: 'Marido', modo: 'mitad', comercio: 'JUMBO MAIPU' }],
+      ignorados: [{ msgId: 'ig1', correo: 'mjgaribsande@gmail.com', fecha: f(1, '09:12'), asunto: 'Comprobante de Pago de Cuentas', pendiente: false }, { msgId: 'ig2', correo: 'dra.mjgaribsande@gmail.com', fecha: f(3, '18:40'), asunto: 'Aviso de cargo automático PAC', pendiente: false }],
       correoPrincipal: 'mjgaribsande@gmail.com', lecturas: [{ correo: 'mjgaribsande@gmail.com', fecha: f(0, '20:10'), version: '0.9' }, { correo: 'dra.mjgaribsande@gmail.com', fecha: f(0, '20:05'), version: '0.5.0' }] }
   };
   const busca = (id) => d.movimientos.find((m) => m.id === id);
@@ -2270,7 +2301,9 @@ const MOCK = (() => {
   return {
     api_datos: () => copia(d),
     api_guardar: (id, c, conf) => { const m = busca(id); const cu = c.cuotas; c = Object.assign({}, c); delete c.cuotas; delete c.valorCuota; Object.assign(m, c); if (cu !== undefined) { if (cu > 1) m.detalle.cuotas = cu; else delete m.detalle.cuotas; } if (c.medioAbono) m.detalle.medioAbono = c.medioAbono; if (m.tipo === 'abono' || m.tipo === 'entre_cuentas') m.categoria = ''; if (conf || m.estado !== 'por_revisar') { m.estado = 'confirmado'; m.pregunta = ''; } return copia(m); },
-    api_confirmarVarios: (ids) => ids, api_eliminar: () => true, api_ignorarTipo: () => true,
+    api_confirmarVarios: (ids) => ids, api_eliminar: () => true, api_ignorarTipo: () => true, api_descartarCorreo: () => true,
+    api_forzarCorreo: (id) => { if (id === 'ig2') return { pendiente: true }; const m = mov({ fecha: f(1, '09:12'), tipo: 'gasto', medio: 'CC-0608', comercio: 'Comprobante de Pago de Cuentas', monto: 45990, montoOriginal: 45990, categoria: '', estado: 'por_revisar', pregunta: 'sin_reconocer', fuente: 'correo', detalle: { sentido: 'sale' } }); return { mov: copia(m) }; },
+    api_invertirSentido: (id) => { const m = busca(id) || copia(S.d.movimientos.find((x) => x.id === id)); const s = (m.detalle || {}).sentido || (m.tipo === 'ingreso' ? 'entra' : 'sale'); m.detalle = Object.assign({}, m.detalle, { sentido: s === 'entra' ? 'sale' : 'entra' }); m.tipo = s === 'entra' ? 'gasto' : 'ingreso'; m.categoria = ''; m.estado = 'por_revisar'; return copia(m); },
     api_vincularReembolso: (id, ids) => { const ing = busca(id); const out = [ing];
       ((ing.detalle.reembolsa) || []).forEach((v) => { const g = busca(v.id); if (g) { g.detalle = Object.assign({}, g.detalle, { reembolsos: (g.detalle.reembolsos || []).filter((r) => r.id !== id) }); out.push(g); } });
       let resto = ing.monto; const nuevos = []; ids.map(busca).sort((a, b) => (a.fecha < b.fecha ? -1 : 1)).forEach((g, i, arr) => { const ya = (g.detalle.reembolsos || []).reduce((a, r) => a + r.monto, 0); const m = i === arr.length - 1 ? resto : Math.min(resto, g.monto - ya); if (m <= 0) return;
