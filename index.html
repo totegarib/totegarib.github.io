@@ -622,10 +622,24 @@ function estadoTarjeta(t) {
   let actual = periodoDe(t.cierre, hoy);
   let anterior = periodoDe(t.cierre, new Date(actual.ini.getTime() - 864e5));
   const cart = cartolaDe(t.codigo);
-  const usarCartola = cart && cart.hasta && cart.totalFacturado != null && cart.hasta >= fIso(new Date(anterior.fin.getTime() - 12 * 864e5));
+  let usarCartola = cart && cart.hasta && cart.totalFacturado != null && cart.hasta >= fIso(new Date(anterior.fin.getTime() - 12 * 864e5));
   if (usarCartola) {
     anterior = { ini: fObj(cart.desde), fin: fObj(cart.hasta), iniS: cart.desde, finS: cart.hasta };
     if (actual.iniS <= cart.hasta) { const ini = new Date(anterior.fin.getTime() + 864e5); actual = { ini, fin: actual.fin > ini ? actual.fin : periodoDe(t.cierre, new Date(ini.getTime() + 864e5)).fin, iniS: fIso(ini) }; actual.finS = fIso(actual.fin); }
+  }
+  // la cartola trae el próximo período exacto: manda sobre el día de cierre aproximado
+  const px = ((S.d.config || {}).proximos || {})[t.codigo];
+  if (px && px.desde && px.hasta && (!cart || px.desde > cart.hasta)) {
+    const pxp = { ini: fObj(px.desde), fin: fObj(px.hasta), iniS: px.desde, finS: px.hasta };
+    if (hoy0 <= pxp.fin) {
+      actual = pxp;
+      if (cart && cart.hasta && cart.totalFacturado != null) { usarCartola = true; anterior = { ini: fObj(cart.desde), fin: fObj(cart.hasta), iniS: cart.desde, finS: cart.hasta }; }
+    } else {
+      // ya cerró y aún no llega su cartola: lo facturado se calcula con los avisos
+      anterior = pxp; usarCartola = false;
+      const ini = new Date(pxp.fin.getTime() + 864e5), fin = periodoDe(t.cierre, new Date(ini.getTime() + 864e5)).fin;
+      actual = { ini, fin, iniS: fIso(ini), finS: fIso(fin) };
+    }
   }
   const enRango = (m, p) => { const d = String(m.fecha).slice(0, 10); return d >= p.iniS && d <= p.finS; };
   const cargos = facturables().filter((m) => m.medio === t.codigo && cuentaEnGasto(m));
@@ -644,7 +658,7 @@ function estadoTarjeta(t) {
 /** gastos que cuentan en el período elegido (calendario o facturación) */
 /** misma fecha de hoy, off meses atrás (el día se ajusta si el mes es más corto) */
 function fechaRef(off) { const h = new Date(); return diaEn(h.getFullYear(), h.getMonth() - (off || 0), h.getDate()); }
-function periodosTarjetas(off) { const p = {}; tarjetas().forEach((t) => { if (t.cierre) p[t.codigo] = periodoDe(t.cierre, fechaRef(off)); }); return p; }
+function periodosTarjetas(off) { const p = {}; tarjetas().forEach((t) => { if (!t.cierre) return; const e = !off ? estadoTarjeta(t) : null; p[t.codigo] = e ? e.actual : periodoDe(t.cierre, fechaRef(off)); }); return p; }
 function gastosPeriodo(modo, off) {
   const mes = mesAnt(mesActual(), off || 0);
   if (modo !== 'facturacion') return facturables().filter((m) => cuentaEnGasto(m) && mesClave(m.fecha) === mes);
@@ -1766,6 +1780,23 @@ async function abrirConexionApp(nueva) {
     catch (e) { error(e); }
   };
 }
+function abrirAvisosMov() {
+  const c = S.d.config, modo = c.avisos || 'no';
+  const li = (x) => '<ol class="muted" style="margin:0;padding-left:18px">' + x.map((y) => '<li>' + y + '</li>').join('') + '</ol>';
+  let h = '<div class="htop"><h2>Avisos de movimientos nuevos</h2><button class="lnk" onclick="cerrar()">Cerrar</button></div>' +
+    '<div class="muted">Cada vez que Mis Lukas anote algo nuevo (correo del banco, SMS o Apple Pay), te avisa con el monto y el comercio. Revisa cada 10 minutos, así que si llegan varios juntos van en un solo aviso.</div>' +
+    '<div class="seg" id="av-modo">' + [['no', 'Apagados'], ['correo', 'Por correo'], ['ntfy', 'Al celular']].map(([k, t]) => '<button data-m="' + k + '" class="' + (modo === k ? 'on' : '') + '">' + t + '</button>').join('') + '</div>';
+  if (modo === 'correo') h += '<div class="card"><b>Por correo</b><span class="muted">Te llega un correo a <b>' + esc(c.correoPrincipal || 'tu correo principal') + '</b>. Si tienes las notificaciones de Gmail activas en el iPhone, lo verás como cualquier correo.</span></div>';
+  if (modo === 'ntfy') h += '<div class="card"><b>Al celular, con la app ntfy</b>' +
+    li(['Instala <b>ntfy</b> desde el App Store (es gratis).', 'Ábrela, toca <b>+</b>, pega el tema de abajo en <b>Topic name</b> y toca <b>Subscribe</b> (deja el servidor que trae).', 'Acepta las notificaciones cuando te lo pida.', 'Vuelve aquí y toca <b>Mandar un aviso de prueba</b>.']) +
+    '<div class="extracto" style="user-select:all">' + esc(c.ntfyTema || '') + '</div><button class="btn full" onclick="copiar(S.d.config.ntfyTema,\'Tema copiado\')">Copiar el tema</button>' +
+    '<span class="muted">El tema funciona como una clave: quien lo sepa podría leer tus avisos (monto y comercio). No lo compartas.</span></div>';
+  if (modo !== 'no') h += '<button class="btn pri full" id="av-prueba">Mandar un aviso de prueba</button>';
+  abrirHoja(h);
+  $('#av-modo').onclick = async (e) => { const b = e.target.closest('button'); if (!b || b.dataset.m === modo) return;
+    try { const r = await api('api_guardarAvisos', b.dataset.m); Object.assign(S.d.config, r); guardarCache(); abrirAvisosMov(); render(); } catch (err) { error(err); } };
+  if ($('#av-prueba')) $('#av-prueba').onclick = async () => { try { await api('api_probarAviso'); toast('Aviso enviado: revisa tu ' + (modo === 'ntfy' ? 'celular' : 'correo')); } catch (err) { error(err); } };
+}
 async function abrirWidget(nueva) {
   if (nueva && !confirm('Se cambiará la llave del widget: el que tengas instalado dejará de actualizarse hasta que pegues el código nuevo en Scriptable.')) return;
   toast('Preparando…');
@@ -1812,6 +1843,7 @@ function vAjustes() {
     (c.resumenCorreo ? '<button class="fila" onclick="probarResumen()"><span>✉️</span><span class="lnk">Enviarme uno de prueba</span><small></small><span class="v">›</span></button>' : '') +
     '<button class="fila" onclick="ir(\'categorias\')"><span>🗂️</span><span>Categorías</span><small>' + catsActivas().length + ' activas · presupuestos y emojis</small><span class="v">›</span></button>' +
     '<button class="fila" onclick="abrirConexionApp()"><span>📱</span><span>App del iPhone</span><small>' + (window.MISLUKAS_PWA ? 'Este celular está conectado' : c.appConectada ? 'Conectada · sin pestañas y a pantalla completa' : 'Tenla en tu pantalla de inicio, sin pestañas') + '</small><span class="v">›</span></button>' +
+    '<button class="fila" onclick="abrirAvisosMov()"><span>🔔</span><span>Avisos de movimientos nuevos</span><small>' + ({ correo: 'Por correo', ntfy: 'Al celular (ntfy)' }[c.avisos] || 'Apagados') + '</small><span class="v">›</span></button>' +
     '<button class="fila" onclick="abrirWidget()"><span>🧩</span><span>Widget del iPhone</span><small>Tu resumen en la pantalla de inicio</small><span class="v">›</span></button>' +
     '<button class="fila" onclick="ir(\'fuentes\')"><span>📥</span><span>Fuentes y cartolas</span><small>' + c.lecturas.length + ' correos conectados</small><span class="v">›</span></button></div>';
   h += '<span class="sect">Tus datos</span><div class="grupo">' +
@@ -1929,6 +1961,16 @@ function sinTildes(s) { return String(s).normalize('NFD').replace(/[̀-ͯ]/g, ''
 
 /** Detecta qué cartola es y la lee. Devuelve { ok, tipo, ...datos, lineas, avisos } */
 function leerCartola(filas) {
+  const r = leerCartolaBase(filas);
+  // la fecha de cierre cambia mes a mes: la cartola trae el próximo período exacto
+  if (r && r.tipo === 'tc') {
+    const todo = sinTildes(filas.map((f) => f.txt).join('\n')).toUpperCase();
+    const px = /PROXIMO PERIODO (?:DE FACTURACION|A FACTURAR)\s*(?:DESDE\s*)?(\d{2}\/\d{2}\/\d{4})\s*(?:HASTA\s*)?(\d{2}\/\d{2}\/\d{4})/.exec(todo);
+    if (px) { r.proximoDesde = fechaCartola(px[1]); r.proximoHasta = fechaCartola(px[2]); }
+  }
+  return r;
+}
+function leerCartolaBase(filas) {
   const todo = sinTildes(filas.map((f) => f.txt).join('\n')).toUpperCase();
   const pegado = todo.replace(/\s+/g, '');
   if (/ESTADO DE CUENTA\s+LINEA DE CREDITO/.test(todo) || (/MONTO APROBADO/.test(todo) && /MONTO UTILIZADO/.test(todo))) return cartolaLinea(filas, todo);
@@ -2282,7 +2324,7 @@ const MOCK = (() => {
   [205000, 180000, 240000, 190000, 178000, 196000, 221000, 238000, 245000].forEach((v, i) => movs.push(mov({ fecha: f(35 + i * 30, '20:00'), tipo: 'gasto', medio: 'TC-1736', comercio: 'RESTORAN ' + i, monto: v, montoOriginal: v, categoria: 'Restoranes y delivery' })));
   [410000, 395000, 430000, 402000, 450000, 420000].forEach((v, i) => movs.push(mov({ fecha: f(33 + i * 30, '10:00'), tipo: 'gasto', medio: 'TC-1736', comercio: 'JUMBO ' + i, monto: v, montoOriginal: v, categoria: 'Supermercado' })));
   const d = {
-    version: '0.9.5', categorias: cats,
+    version: '0.9.6', categorias: cats,
     medios: [{ codigo: 'TC-1736', nombre: 'T. crédito Banco de Chile', tipo: 'tc', cierre: 20, pago: 5, orden: 1 }, { codigo: 'TC-9021', nombre: 'T. crédito Cencosud', tipo: 'tc', cierre: 25, pago: null, orden: 2 }, { codigo: 'CC-0608', nombre: 'Cuenta corriente', tipo: 'cc', orden: 3 }],
     movimientos: movs,
     deudas: [{ id: 'd1', persona: 'Marido', direccion: 'me_deben', tipo: 'compartido', concepto: 'JUMBO MAIPU', monto: 32190, fecha: f(1), estado: 'abierta', movId: 'm5' },
@@ -2301,7 +2343,7 @@ const MOCK = (() => {
   return {
     api_datos: () => copia(d),
     api_guardar: (id, c, conf) => { const m = busca(id); const cu = c.cuotas; c = Object.assign({}, c); delete c.cuotas; delete c.valorCuota; Object.assign(m, c); if (cu !== undefined) { if (cu > 1) m.detalle.cuotas = cu; else delete m.detalle.cuotas; } if (c.medioAbono) m.detalle.medioAbono = c.medioAbono; if (m.tipo === 'abono' || m.tipo === 'entre_cuentas') m.categoria = ''; if (conf || m.estado !== 'por_revisar') { m.estado = 'confirmado'; m.pregunta = ''; } return copia(m); },
-    api_confirmarVarios: (ids) => ids, api_eliminar: () => true, api_ignorarTipo: () => true, api_descartarCorreo: () => true,
+    api_confirmarVarios: (ids) => ids, api_eliminar: () => true, api_ignorarTipo: () => true, api_descartarCorreo: () => true, api_guardarAvisos: (m) => ({ avisos: m, ntfyTema: m === 'ntfy' ? 'mislukas-a1b2c3d4e5f6a7b8c9d0' : (d.config.ntfyTema || '') }), api_probarAviso: () => true,
     api_forzarCorreo: (id) => { if (id === 'ig2') return { pendiente: true }; const m = mov({ fecha: f(1, '09:12'), tipo: 'gasto', medio: 'CC-0608', comercio: 'Comprobante de Pago de Cuentas', monto: 45990, montoOriginal: 45990, categoria: '', estado: 'por_revisar', pregunta: 'sin_reconocer', fuente: 'correo', detalle: { sentido: 'sale' } }); return { mov: copia(m) }; },
     api_invertirSentido: (id) => { const m = busca(id) || copia(S.d.movimientos.find((x) => x.id === id)); const s = (m.detalle || {}).sentido || (m.tipo === 'ingreso' ? 'entra' : 'sale'); m.detalle = Object.assign({}, m.detalle, { sentido: s === 'entra' ? 'sale' : 'entra' }); m.tipo = s === 'entra' ? 'gasto' : 'ingreso'; m.categoria = ''; m.estado = 'por_revisar'; return copia(m); },
     api_vincularReembolso: (id, ids) => { const ing = busca(id); const out = [ing];
